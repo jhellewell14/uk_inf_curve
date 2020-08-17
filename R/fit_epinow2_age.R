@@ -1,5 +1,5 @@
 # READ ONS LINELIST
-
+path_to_factory <- "~/repos/covid19_automation"
 file_path <- file.path(path_to_factory, "data", "rds", "deaths_eng_latest.rds")
 key <- cyphr::data_key(file.path(path_to_factory, "data"))
 x <- cyphr::decrypt(readRDS(file_path), key)
@@ -10,6 +10,14 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" 
                                             place_of_death == "care_home",
                                           "Care home",
                                           "Other")]
+
+agebreaks <- c(0, 10, 20, 30, 40, 50, 60, 70 ,80, 90, 100)
+agelabs <- c("0-9", "10-19", 
+             "20-29", "30-39", 
+             "40-49", "50-59", 
+             "60-69", "70-79",
+             "80-89","90-99")
+
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
 ]
 
