@@ -21,8 +21,55 @@ agelabs <- c("0-9", "10-19",
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
 ]
 
+# Assigns deaths to most likely age group
+# Maybe a better way of doing this
 ons_linelist[is.na(age_grp), age_grp := "80-89"]
 
+## READ CO-CIN LINELIST
+# Read in data
+data <- data.table::fread("~/Downloads/CCPUKSARI_DATA_2020-08-04_0947.csv", na.strings = "")
+
+# Select columns + fix read in issue where entries are "" instead of NA
+cocin_linelist <- data[,.(cestdat, dsstdtc, dsterm, subjid, age = age_estimateyears)]
+
+cocin_linelist[, c("onset_date_missing", "outcome_date_missing", "dead") :=
+                 list(all(is.na(cestdat)), all(is.na(dsstdtc)), any(dsterm == 4, na.rm = TRUE)), 
+               by = "subjid"]
+
+cocin_linelist <- cocin_linelist[!onset_date_missing & !outcome_date_missing & dead
+                                 ][, .(onset_date = unique(cestdat[!is.na(cestdat)]),
+                                       dead = unique(dead),
+                                       age = unique(age[!is.na(age)]),
+                                       outcome_date = unique(dsstdtc[!is.na(dsstdtc)])), by = "subjid"
+                                   ][, delay := as.integer(as.Date(outcome_date) - as.Date(onset_date))
+                                     ][delay >= 0 & delay <= 60 & as.Date(onset_date) > "2020-01-01"
+                                       ][, delay_sampled := runif(.N, delay, delay + 1)]
+
+cocin_linelist <- cocin_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
+                                 ][!is.na(age_grp)][order(age_grp)]
+
+## SAMPLE REPORTING DELAYS BY AGE
+
+young_delay <- EpiNow2::bootstrapped_dist_fit(values = cocin_linelist[age_grp %in% c("0-9", "10-19",
+                              "20-29", "30-39"), delay_sampled], 
+                              bootstraps = 10,
+                              bootstrap_samples = 100,
+                              verbose = TRUE)
+
+delays <- list(young_delay, young_delay, young_delay, young_delay)
+delays[[1]]$age_grp <- "0-9"
+delays[[2]]$age_grp <- "10-19"
+delays[[3]]$age_grp <- "20-29"
+delays[[4]]$age_grp <- "30-39"
+
+for(i in 1:length(agelabs[5:10])) {
+  print(i)
+  delays[[i + 4]] <- EpiNow2::bootstrapped_dist_fit(values = cocin_linelist[age_grp == agelabs[4 + i], delay_sampled],
+                                              bootstraps = 10,
+                                              bootstrap_samples = 100,
+                                              verbose = TRUE)
+  delays[[i + 4]]$age_grp <- agelabs[4 + i]
+}
 
 ## COMMUNITY DEATHS BY AGE
 deaths_community <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Other", 
@@ -52,6 +99,10 @@ res <- list()
 samps <- list()
 for(i in 1:length(agelabs)){
   print(i)
+  
+  reporting_delay <- as.list(rbindlist(delays)[age_grp == agelabs[i]])
+  reporting_delay$max <- 60
+  
   estimates <- EpiNow2::estimate_infections(reported_cases = deaths_community[age_grp == agelabs[i]], 
                                             generation_time = generation_time,
                                             estimate_rt = FALSE, fixed = FALSE,
