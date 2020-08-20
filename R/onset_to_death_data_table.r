@@ -7,23 +7,53 @@ setDTthreads(parallel::detectCores())
 data <- data.table::fread("~/Downloads/CCPUKSARI_DATA_2020-08-04_0947.csv", na.strings = "")
 
 # Select columns + fix read in issue where entries are "" instead of NA
-df <- data[,.(cestdat, dsstdtc, dsterm, subjid)]
+df <- data[,.(cestdat, dsstdtc, dsterm, subjid, age = age_estimateyears)]
 
 
 df[, c("onset_date_missing", "outcome_date_missing", "dead") :=
-     list(all(is.na(cestdat)), all(is.na(dsstdtc)), any(dsterm == 4, na.rm = TRUE)), 
+      list(all(is.na(cestdat)), all(is.na(dsstdtc)), any(dsterm == 4, na.rm = TRUE)), 
    by = "subjid"]
 
 df <- df[!onset_date_missing & !outcome_date_missing & dead
-   ][, .(onset_date = unique(cestdat[!is.na(cestdat)]),
-         dead = unique(dead),
-         outcome_date = unique(dsstdtc[!is.na(dsstdtc)])), by = "subjid"
-     ][, delay := as.integer(as.Date(outcome_date) - as.Date(onset_date))
-       ][delay >= 0 & delay <= 60 & as.Date(onset_date) > "2020-01-01"][
-         , delay_sampled := runif(.N, delay, delay + 1)]
+][, .(onset_date = unique(cestdat[!is.na(cestdat)]),
+      dead = unique(dead),
+      age = unique(age[!is.na(age)]),
+      outcome_date = unique(dsstdtc[!is.na(dsstdtc)])), by = "subjid"
+][, delay := as.integer(as.Date(outcome_date) - as.Date(onset_date))
+][delay >= 0 & delay <= 60 & as.Date(onset_date) > "2020-01-01"][
+   , delay_sampled := runif(.N, delay, delay + 1)]
+
+df[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)]
 
 # Fit a gamma distribution
-nbfit <- fitdistrplus::fitdist(df$delay_sampled, distr = "gamma")
+nbfit30 <- fitdistrplus::fitdist(df[age_grp == "30-39", delay_sampled], distr = "gamma")
+nbfit40 <- fitdistrplus::fitdist(df[age_grp == "40-49", delay_sampled], distr = "gamma")
+nbfit50 <- fitdistrplus::fitdist(df[age_grp == "50-59", delay_sampled], distr = "gamma")
+nbfit60 <- fitdistrplus::fitdist(df[age_grp == "60-69", delay_sampled], distr = "gamma")
+nbfit70 <- fitdistrplus::fitdist(df[age_grp == "70-79", delay_sampled], distr = "gamma")
+nbfit80 <- fitdistrplus::fitdist(df[age_grp == "80-89", delay_sampled], distr = "gamma")
+nbfit90 <- fitdistrplus::fitdist(df[age_grp == "90-99", delay_sampled], distr = "gamma")
+
+y <- c(dgamma(seq(0, 60, 0.1), shape = nbfit30$estimate[1], rate = nbfit30$estimate[2]),
+       dgamma(seq(0, 60, 0.1), shape = nbfit40$estimate[1], rate = nbfit40$estimate[2]),
+       dgamma(seq(0, 60, 0.1), shape = nbfit50$estimate[1], rate = nbfit50$estimate[2]),
+       dgamma(seq(0, 60, 0.1), shape = nbfit60$estimate[1], rate = nbfit60$estimate[2]),
+       dgamma(seq(0, 60, 0.1), shape = nbfit70$estimate[1], rate = nbfit70$estimate[2]),
+       dgamma(seq(0, 60, 0.1), shape = nbfit80$estimate[1], rate = nbfit80$estimate[2]),
+       dgamma(seq(0, 60, 0.1), shape = nbfit90$estimate[1], rate = nbfit90$estimate[2]))
+
+hi <- data.frame(y,
+                 x = rep(seq(0, 60, 0.1), 7),
+                 agegrp = rep(agelabs[4:10], rep(601, 7)))
+
+
+hi %>% 
+   ggplot2::ggplot(ggplot2::aes(x = x, y = y, col = as.factor(agegrp))) +
+   ggplot2::geom_line() + 
+   cowplot::theme_cowplot() +
+   ggplot2::scale_color_discrete(name = "Age group") +
+   ggplot2::labs(x = "Days since onset", y = "Probability density")
+
 
 # Death distribution for care homes in linelist from covid19_automation
 
@@ -35,9 +65,9 @@ x <- cyphr::decrypt(readRDS(file_path), key)
 
 lldf <- data.table::as.data.table(x)
 lldf[, care_home_death := fifelse(residence_type == "care_nursing_home" |
-                                    place_of_death == "care_home",
-                                 "Care home",
-                                 "Other")]
+                                     place_of_death == "care_home",
+                                  "Care home",
+                                  "Other")]
 
 ### Age proportions
 
@@ -88,13 +118,13 @@ text(25, 0.03, "Hospital")
 #### Deaths time series
 deaths_ts <- data.table::as.data.table(x)
 deaths_ts[, care_home_death := fifelse(residence_type == "care_nursing_home" |
-                                     place_of_death == "care_home",
-                                  "Care home",
-                                  "Other")]
+                                          place_of_death == "care_home",
+                                       "Care home",
+                                       "Other")]
 
 
 reported_cases_community  <- deaths_ts[ons == "reported_by_ons" & care_home_death == "Other", "date_death"][, .N, by = "date_death"][, .(confirm = N, date = date_death)][order(date)][.(seq.Date(from = min(date), to = max(date), by = "day")), 
-                      on = .(date),roll = 0][is.na(confirm), confirm := 0]
+                                                                                                                                                                                       on = .(date),roll = 0][is.na(confirm), confirm := 0]
 
 reported_cases_community %>% 
    ggplot2::ggplot(ggplot2::aes(x = date, y = confirm)) +
@@ -175,23 +205,23 @@ df2[, ind := 1:.N] %>%
 
 ### Reported deaths in care homes
 reported_cases_carehome <- reported_cases_community  <- deaths_ts[ons == "reported_by_ons" & care_home_death == "Care home", "date_death"
-                                                                  ][, .N, by = "date_death"
-                                                                    ][, .(confirm = N, date = date_death)
-                                                                      ][order(date)
-                                                                        ][.(seq.Date(from = min(date), to = max(date), by = "day")), on = .(date), roll = 0
-                                                                          ][is.na(confirm), confirm := 0]
+][, .N, by = "date_death"
+][, .(confirm = N, date = date_death)
+][order(date)
+][.(seq.Date(from = min(date), to = max(date), by = "day")), on = .(date), roll = 0
+][is.na(confirm), confirm := 0]
 
 reporting_delay_ch <- EpiNow2::bootstrapped_dist_fit(values = lldf$delay, verbose = TRUE)
 ## Set max allowed delay to 30 days to truncate computation
 reporting_delay_ch$max <- 60
 
 estimates_ch <- EpiNow2::estimate_infections(reported_cases = reported_cases_carehome, 
-                                          generation_time = generation_time,
-                                          estimate_rt = FALSE, fixed = FALSE,
-                                          delays = list(incubation_period, reporting_delay_ch),
-                                          horizon = 7, samples = 4000, warmup = 500, 
-                                          cores = 4, chains = 4, verbose = TRUE, 
-                                          adapt_delta = 0.95)
+                                             generation_time = generation_time,
+                                             estimate_rt = FALSE, fixed = FALSE,
+                                             delays = list(incubation_period, reporting_delay_ch),
+                                             horizon = 7, samples = 4000, warmup = 500, 
+                                             cores = 4, chains = 4, verbose = TRUE, 
+                                             adapt_delta = 0.95)
 
 p2 <- estimates_ch$summarised[variable == "infections" & type == "estimate",] %>%
    ggplot2::ggplot(ggplot2::aes(x = date, y= median)) +
@@ -230,9 +260,9 @@ rbind(df1, df2) %>%
 hi <- merge(cm[, .(date, median)], ch[, .(date, median)], by = "date")[, median := median.x + median.y]
 
 daty <- data.table(date = seq.Date(from = as.Date("2020-05-14"), to = as.Date("2020-07-30"), by = "7 days"),
-           infections = c(4100, 3100, 2500, 2100, 1900, 1800, 1800, 1900, 2000, 2400, 2900, 3700),
-           top = c(6400, 4300, 3300, 2800, 2500, 2400, 2300, 2500, 2700, 3300, 4300, 6400),
-           bottom = c(2500, 2100, 1800, 1500, 1400, 1300, 1300, 1400, 1500, 1600, 1900, 2100))
+                   infections = c(4100, 3100, 2500, 2100, 1900, 1800, 1800, 1900, 2000, 2400, 2900, 3700),
+                   top = c(6400, 4300, 3300, 2800, 2500, 2400, 2300, 2500, 2700, 3300, 4300, 6400),
+                   bottom = c(2500, 2100, 1800, 1500, 1400, 1300, 1300, 1400, 1500, 1600, 1900, 2100))
 
 IFR <- 0.015
 
@@ -246,7 +276,7 @@ cm[, .(date, infections = median / IFR, top = top / IFR, bottom = bottom / IFR)]
    cowplot::theme_cowplot()
 
 pd <- cm[, .(date, infections = median / IFR, top = top / IFR, bottom = bottom / IFR)
-   ][, .(date, infections = cumsum(infections), top = cumsum(top), bottom = cumsum(bottom))]
+][, .(date, infections = cumsum(infections), top = cumsum(top), bottom = cumsum(bottom))]
 
 pd %>%
    ggplot2::ggplot(ggplot2::aes(x = date, y = infections / 56000000,
