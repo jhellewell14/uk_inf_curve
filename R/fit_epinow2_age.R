@@ -1,3 +1,6 @@
+library(data.table)
+library(magrittr)
+
 # READ ONS LINELIST
 path_to_factory <- "~/repos/covid19_automation"
 file_path <- file.path(path_to_factory, "data", "rds", "deaths_eng_latest.rds")
@@ -124,5 +127,11 @@ fr[type == "estimate" & variable == "infections"] %>%
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Infections that lead to deaths")
 
+fr[type == "estimate" & variable == "infections"][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"] %>%
+  ggplot2::ggplot(ggplot2::aes(x = date, y = median, ymin = bottom, ymax = top)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_ribbon(alpha = 0.5) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Infections that lead to deaths")
 
 
