@@ -1,5 +1,6 @@
 library(data.table)
 library(magrittr)
+library(ggplot2)
 
 # READ ONS LINELIST
 path_to_factory <- "~/repos/covid19_automation"
@@ -114,8 +115,8 @@ for(i in 1:length(agelabs)){
                                             cores = 4, chains = 4, verbose = TRUE, 
                                             adapt_delta = 0.95)
   
-  res[[i]] <- estimates$summarised[, age_grp := agelabs[i]]
-  samps[[i]] <- estimates$samples[, age_grp := agelabs[i]]
+  res[[i]] <- estimates$summarised[, age_grp := agelabs[i], location := "community"]
+  samps[[i]] <- estimates$samples[, age_grp := agelabs[i], location := "community"]
 }
 
 fr <- data.table::rbindlist(res)
@@ -133,5 +134,36 @@ fr[type == "estimate" & variable == "infections"][, .(median = sum(median), top 
   ggplot2::geom_ribbon(alpha = 0.5) +
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Infections that lead to deaths")
+
+## CARE HOME DEATHS BY AGE
+
+deaths_carehome <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Care home", 
+                                .(confirm = .N, date = date_death), by = c("age_grp", "date_death")
+][,.(age_grp, date, confirm)]
+
+
+deaths_carehome <- deaths_carehome[deaths_carehome[, .(date = seq.Date(from = min(date), to = max(date), by = "day")),
+                                                      by = .(age_grp)],
+                                     on = .(age_grp, date),
+                                     roll = 0][is.na(confirm), confirm := 0][order(age_grp, date)]
+
+carehome_delays <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Care home" & !is.na(date_death) & !is.na(date_onset)
+             ][, delay := as.integer(as.Date(date_death) - as.Date(date_onset))
+               ][delay >= 0 & delay <= 60 & as.Date(date_onset) > "2020-01-01"
+               ][, delay_sampled := runif(.N, delay, delay + 1)
+                 ][, .(delay_sampled, age_grp)][order(age_grp)]
+
+carehome_delays <- EpiNow2::bootstrapped_dist_fit(values = carehome_delays[, delay_sampled],
+                                                  bootstraps = 10,
+                                                  bootstrap_samples = 100,
+                                                  verbose = TRUE)
+
+carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = deaths_carehome[, .(confirm = sum(confirm)), by = "date"], 
+                                                            generation_time = generation_time,
+                                                            estimate_rt = FALSE, fixed = FALSE,
+                                                            delays = list(incubation_period, carehome_delays),
+                                                            horizon = 7, samples = 4000, warmup = 500, 
+                                                            cores = 4, chains = 4, verbose = TRUE, 
+                                                            adapt_delta = 0.95)
 
 
