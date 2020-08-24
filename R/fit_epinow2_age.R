@@ -121,6 +121,7 @@ for(i in 1:length(agelabs)){
 
 fr <- data.table::rbindlist(res)
 
+
 fr[type == "estimate" & variable == "infections"] %>%
   ggplot2::ggplot(ggplot2::aes(x = date, y = median, col = age_grp)) +
   ggplot2::geom_line() +
@@ -166,4 +167,11 @@ carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = death
                                                             cores = 4, chains = 4, verbose = TRUE, 
                                                             adapt_delta = 0.95)
 
-
+rbindlist(list(fr[type == "estimate" & variable == "infections"][, .(median = sum(median), top = sum(top), bottom = sum(bottom), location), by = "date"], 
+               fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)])) %>%
+  ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
+  geom_line(aes(col = location)) +
+  geom_ribbon(alpha = 0.4, aes(fill = location)) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Infections that lead to deaths") +
+  geom_vline(xintercept = as.Date("2020-03-26"), lty = 2)
