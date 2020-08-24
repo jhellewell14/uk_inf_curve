@@ -1,6 +1,7 @@
 library(data.table)
 library(magrittr)
 library(ggplot2)
+library(scales)
 
 # READ ONS LINELIST
 path_to_factory <- "~/repos/covid19_automation"
@@ -167,11 +168,56 @@ carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = death
                                                             cores = 4, chains = 4, verbose = TRUE, 
                                                             adapt_delta = 0.95)
 
-rbindlist(list(fr[type == "estimate" & variable == "infections"][, .(median = sum(median), top = sum(top), bottom = sum(bottom), location), by = "date"], 
-               fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)])) %>%
+final_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
+                               ][, .(median = sum(median), top = sum(top), bottom = sum(bottom), location = location[1]), by = date], 
+               fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]))
+
+
+
+final_out %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line(aes(col = location)) +
   geom_ribbon(alpha = 0.4, aes(fill = location)) +
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Infections that lead to deaths") +
   geom_vline(xintercept = as.Date("2020-03-26"), lty = 2)
+
+
+## IFR 
+
+temp_ch <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Care home"]
+setkey(temp_ch, age_grp)
+temp_ch <- temp_ch[levels(age_grp), .N, by = .EACHI]
+
+IFR <- data.table(age_grp = agelabs, 
+           ifr = c(1.6e-05, 7e-05, 0.00031, 0.00084, 0.0016, 0.006, 0.019, 0.043, 0.078, 0.078),
+           community = ons_linelist[ons == "reported_by_ons" & care_home_death == "Other"][, .N, by = age_grp][, prop := N / sum(N)][order(age_grp)][, prop],
+           carehome = temp_ch$N / sum(temp_ch$N))
+
+IFR <- melt(IFR, id.vars = c("age_grp", "ifr"), measure.vars = c("community", "carehome"))[, .(age_grp, location = variable, ifr = ifr * value)
+                                                                                   ][, .(ifr = sum(ifr)), by = location]
+
+final_out[, ifr := fifelse(location == "community", IFR[location == "community", ifr], IFR[location == "carehome", ifr])]
+
+final_out <- final_out[order(location, date)]
+
+final_out_cs <- final_out[ , .(med = cumsum(median / ifr), top = cumsum(top / ifr), bottom = cumsum(bottom / ifr), date),  by = location]
+
+final_out_cs %>%
+  ggplot(aes(x = date, y = med, ymin = bottom, ymax = top)) +
+  geom_line(aes(col = location)) +
+  geom_ribbon(alpha = 0.4, aes(fill = location)) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Infections") +
+  geom_vline(xintercept = as.Date("2020-03-26"), lty = 2) +
+  ggplot2::scale_y_continuous(label = comma)
+
+final_out %>%
+  ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
+  geom_line(aes(col = location)) +
+  geom_ribbon(alpha = 0.4, aes(fill = location)) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Infections") +
+  geom_vline(xintercept = as.Date("2020-03-26"), lty = 2)
+
+(5.318464e+05 + 3.140062e+05) / 66650000
