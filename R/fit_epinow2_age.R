@@ -194,30 +194,26 @@ IFR <- data.table(age_grp = agelabs,
            community = ons_linelist[ons == "reported_by_ons" & care_home_death == "Other"][, .N, by = age_grp][, prop := N / sum(N)][order(age_grp)][, prop],
            carehome = temp_ch$N / sum(temp_ch$N))
 
-IFR <- melt(IFR, id.vars = c("age_grp", "ifr"), measure.vars = c("community", "carehome"))[, .(age_grp, location = variable, ifr = ifr * value)
-                                                                                   ][, .(ifr = sum(ifr)), by = location]
+IFR <- melt(IFR, id.vars = c("age_grp", "ifr"), measure.vars = c("community", "carehome"))[, .(age_grp, location = variable, ifr)]
+IFR
+setkey(IFR, age_grp, location)
 
-final_out[, ifr := fifelse(location == "community", IFR[location == "community", ifr], IFR[location == "carehome", ifr])]
+final_out <- fr[type == "estimate" & variable == "infections"]
+setkey(final_out, date, age_grp, location)
 
-final_out <- final_out[order(location, date)]
+final_out <- merge(final_out, IFR, by = c("age_grp", "location"))
 
-final_out_cs <- final_out[ , .(med = cumsum(median / ifr), top = cumsum(top / ifr), bottom = cumsum(bottom / ifr), date),  by = location]
-
-final_out_cs %>%
-  ggplot(aes(x = date, y = med, ymin = bottom, ymax = top)) +
-  geom_line(aes(col = location)) +
-  geom_ribbon(alpha = 0.4, aes(fill = location)) +
-  cowplot::theme_cowplot() +
-  ggplot2::labs(x = "Date", y = "Infections") +
-  geom_vline(xintercept = as.Date("2020-03-26"), lty = 2) +
-  ggplot2::scale_y_continuous(label = comma)
-
-final_out %>%
+final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+          ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
-  geom_line(aes(col = location)) +
-  geom_ribbon(alpha = 0.4, aes(fill = location)) +
-  cowplot::theme_cowplot() +
-  ggplot2::labs(x = "Date", y = "Infections") +
-  geom_vline(xintercept = as.Date("2020-03-26"), lty = 2)
+  geom_line() +
+  geom_ribbon(alpha = 0.4)
 
-(5.318464e+05 + 3.140062e+05) / 66650000
+final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"
+  ][order(date)][, .(median = cumsum(median), top = cumsum(top), bottom = cumsum(bottom), date)] %>%
+  ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
+  geom_line() +
+  geom_ribbon(alpha = 0.4)
+
+
