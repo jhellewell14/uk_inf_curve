@@ -168,19 +168,11 @@ carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = death
                                                             cores = 4, chains = 4, verbose = TRUE, 
                                                             adapt_delta = 0.95)
 
-final_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
+joint_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
                                ][, .(median = sum(median), top = sum(top), bottom = sum(bottom), location = location[1]), by = date], 
                fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]))
 
 
-
-final_out %>%
-  ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
-  geom_line(aes(col = location)) +
-  geom_ribbon(alpha = 0.4, aes(fill = location)) +
-  cowplot::theme_cowplot() +
-  ggplot2::labs(x = "Date", y = "Infections that lead to deaths") +
-  geom_vline(xintercept = as.Date("2020-03-26"), lty = 2)
 
 
 ## IFR 
@@ -190,7 +182,8 @@ setkey(temp_ch, age_grp)
 temp_ch <- temp_ch[levels(age_grp), .N, by = .EACHI]
 
 IFR <- data.table(age_grp = agelabs, 
-           ifr = c(1.6e-05, 7e-05, 0.00031, 0.00084, 0.0016, 0.006, 0.019, 0.043, 0.078, 0.078),
+           # ifr = c(1.6e-05, 7e-05, 0.00031, 0.00084, 0.0016, 0.006, 0.019, 0.043, 0.078, 0.078),
+           ifr = (exp(-8.1290  + (c(5,15,25,35,45,55,65,75,85,95) * 0.1191))) / 100,
            community = ons_linelist[ons == "reported_by_ons" & care_home_death == "Other"][, .N, by = age_grp][, prop := N / sum(N)][order(age_grp)][, prop],
            carehome = temp_ch$N / sum(temp_ch$N))
 
@@ -207,13 +200,21 @@ final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / if
           ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line() +
-  geom_ribbon(alpha = 0.4)
+  geom_ribbon(alpha = 0.4) +
+  scale_y_continuous(labels = comma) +
+  geom_vline(xintercept = as.Date("2020-03-23")) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Daily infections")
 
 final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
 ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"
   ][order(date)][, .(median = cumsum(median), top = cumsum(top), bottom = cumsum(bottom), date)] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line() +
-  geom_ribbon(alpha = 0.4)
+  geom_ribbon(alpha = 0.4) + 
+  scale_y_continuous(labels = comma) + 
+  geom_vline(xintercept = as.Date("2020-03-23")) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Cumulative daily infections")
 
 
