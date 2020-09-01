@@ -116,8 +116,8 @@ for(i in 1:length(agelabs)){
                                             cores = 4, chains = 4, verbose = TRUE, 
                                             adapt_delta = 0.95)
   
-  res[[i]] <- estimates$summarised[, age_grp := agelabs[i], location := "community"]
-  samps[[i]] <- estimates$samples[, age_grp := agelabs[i], location := "community"]
+  res[[i]] <- estimates$summarised[, age_grp := agelabs[i]][, location := "community"]
+  samps[[i]] <- estimates$samples[, age_grp := agelabs[i]][, location := "community"]
 }
 
 fr <- data.table::rbindlist(res)
@@ -168,12 +168,19 @@ carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = death
                                                             cores = 4, chains = 4, verbose = TRUE, 
                                                             adapt_delta = 0.95)
 
+fr2 <- carehome_fit$summarised[, location := "Care home"]
+
 joint_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
                                ][, .(median = sum(median), top = sum(top), bottom = sum(bottom), location = location[1]), by = date], 
                fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]))
 
-
-
+joint_out %>%
+  ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
+  geom_line(aes(col = location)) +
+  geom_ribbon(aes(fill = location), alpha = 0.5) +
+  cowplot::theme_cowplot() +
+  labs(x = "Date", y = "Daily infections (that lead to deaths)") +
+  geom_vline(xintercept = as.Date("2020-03-23"), lty = 2)
 
 ## IFR 
 
