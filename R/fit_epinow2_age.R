@@ -16,19 +16,61 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" 
                                           "Care home",
                                           "Other")]
 
-agebreaks <- c(0, 10, 20, 30, 40, 50, 60, 70 ,80, 90, 100)
-agelabs <- c("0-9", "10-19", 
-             "20-29", "30-39", 
-             "40-49", "50-59", 
-             "60-69", "70-79",
-             "80-89","90-99")
+## GENEVA ESTIMATE AGE GROUPS AND IFR
+# agebreaks <-  c(0, 10, 20, 50, 65, 100)
+# agelabs <- c("5-9", "10-19", "20-49", "50-64", "65-100")
+# na_fill_group <- "65-100"
+# young_groups <- c("5-9", "10-19", "20-49")
+# old_ind <- 4
+# 
+# IFR <- data.table(age_grp = agelabs,
+#                   ifr = c(0.000016, 0.0000032, 0.000092, 0.0014, 0.056))
+
+## VERITY ESTIMATE AGE GROUPS AND IFR
+# agebreaks <- c(0, 10, 20, 30, 40, 50, 60, 70, 80, 100)
+# agelabs <- c("0-9", "10-19",
+#                           "20-29", "30-39",
+#                           "40-49", "50-59",
+#                           "60-69", "70-79",
+#                           "80-100")
+# na_fill_group <- "80-100"
+# young_groups <- c("0-9", "10-19", "20-29", "30-39")
+# old_ind <- 5
+# 
+# IFR <- data.table(age_grp = agelabs,
+#                   ifr = c(0.00161, 0.00695, 0.0309, 0.0844, 0.161, 0.595, 1.93, 4.28, 7.80) / 100)
+
+## SALJE ESTIMATE AGE GROUPS AND IFR
+agebreaks <- c(0, 20, 30, 40, 50, 60, 70, 80, 100)
+agelabs <- c("0-20", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-100")
+na_fill_group <- "80-100"
+young_groups <- c("0-20", "20-29", "30-39")
+old_ind <- 4
+
+IFR <- data.table(age_grp = agelabs,
+                  ifr = c(0.001, 0.005, 0.02, 0.05, 0.2, 0.7, 1.9, 8.3) / 100)
+
+# 10 year age groups
+# agebreaks <- c(0, 10, 20, 30, 40, 50, 60, 70 ,80, 90, 100)
+# agelabs <- c("0-9", "10-19", 
+#              "20-29", "30-39", 
+#              "40-49", "50-59", 
+#              "60-69", "70-79",
+#              "80-89","90-99")
+# na_fill_group <- "80-89"
+# young_groups <- c("0-9", "10-19",
+#                   "20-29", "30-39")
+
+# IFR <- data.table(age_grp = agelabs, 
+#            # ifr = c(1.6e-05, 7e-05, 0.00031, 0.00084, 0.0016, 0.006, 0.019, 0.043, 0.078, 0.078),
+#            ifr = (exp(-8.1290  + (c(5,15,25,35,45,55,65,75,85,95) * 0.1191))) / 100)
 
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
 ]
 
 # Assigns deaths to most likely age group
 # Maybe a better way of doing this
-ons_linelist[is.na(age_grp), age_grp := "80-89"]
+ons_linelist[is.na(age_grp), age_grp := na_fill_group]
 
 ## READ CO-CIN LINELIST
 # Read in data
@@ -50,32 +92,31 @@ cocin_linelist <- cocin_linelist[!onset_date_missing & !outcome_date_missing & d
                                      ][delay >= 0 & delay <= 60 & as.Date(onset_date) > "2020-01-01"
                                        ][, delay_sampled := runif(.N, delay, delay + 1)]
 
+# This again assigns NA age groups to most common category
 cocin_linelist <- cocin_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
-                                 ][!is.na(age_grp)][order(age_grp)]
+                                 ][is.na(age_grp), age_grp := na_fill_group][order(age_grp)]
 
 ## SAMPLE REPORTING DELAYS BY AGE
 
-young_delay <- EpiNow2::bootstrapped_dist_fit(values = cocin_linelist[age_grp %in% c("0-9", "10-19",
-                              "20-29", "30-39"), delay_sampled], 
+young_delay <- EpiNow2::bootstrapped_dist_fit(values = cocin_linelist[age_grp %in% young_groups, delay_sampled], 
                               bootstraps = 10,
                               bootstrap_samples = 100,
                               verbose = TRUE)
 
-delays <- list(young_delay, young_delay, young_delay, young_delay)
-delays[[1]]$age_grp <- "0-9"
-delays[[2]]$age_grp <- "10-19"
-delays[[3]]$age_grp <- "20-29"
-delays[[4]]$age_grp <- "30-39"
-
-for(i in 1:length(agelabs[5:10])) {
+delays <- list()
+for(i in 1:length(agelabs)) {
   print(i)
-  delays[[i + 4]] <- EpiNow2::bootstrapped_dist_fit(values = cocin_linelist[age_grp == agelabs[4 + i], delay_sampled],
-                                              bootstraps = 10,
-                                              bootstrap_samples = 100,
-                                              verbose = TRUE)
-  delays[[i + 4]]$age_grp <- agelabs[4 + i]
+  if(i < old_ind){
+    delays[[i]] <- young_delay
+    delays[[i]]$age_grp <- young_groups[i]
+  }else{
+    delays[[i]] <- EpiNow2::bootstrapped_dist_fit(values = cocin_linelist[age_grp == agelabs[i], delay_sampled],
+                                                  bootstraps = 10,
+                                                  bootstrap_samples = 100,
+                                                  verbose = TRUE)
+    delays[[i]]$age_grp <- agelabs[i]
+  }
 }
-
 ## COMMUNITY DEATHS BY AGE
 deaths_community <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Other", 
                           .(confirm = .N, date = date_death), by = c("age_grp", "date_death")
@@ -188,14 +229,10 @@ temp_ch <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Care home
 setkey(temp_ch, age_grp)
 temp_ch <- temp_ch[levels(age_grp), .N, by = .EACHI]
 
-IFR <- data.table(age_grp = agelabs, 
-           # ifr = c(1.6e-05, 7e-05, 0.00031, 0.00084, 0.0016, 0.006, 0.019, 0.043, 0.078, 0.078),
-           ifr = (exp(-8.1290  + (c(5,15,25,35,45,55,65,75,85,95) * 0.1191))) / 100,
-           community = ons_linelist[ons == "reported_by_ons" & care_home_death == "Other"][, .N, by = age_grp][, prop := N / sum(N)][order(age_grp)][, prop],
-           carehome = temp_ch$N / sum(temp_ch$N))
+IFR$community <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Other"][, .N, by = age_grp][, prop := N / sum(N)][order(age_grp)][, prop]
+IFR$carehome <- temp_ch$N / sum(temp_ch$N)
 
 IFR <- melt(IFR, id.vars = c("age_grp", "ifr"), measure.vars = c("community", "carehome"))[, .(age_grp, location = variable, ifr)]
-IFR
 setkey(IFR, age_grp, location)
 
 final_out <- fr[type == "estimate" & variable == "infections"]
