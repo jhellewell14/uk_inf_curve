@@ -262,3 +262,25 @@ final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / if
   ggplot2::labs(x = "Date", y = "Cumulative daily infections")
 
 
+
+### VERY SIMPLE VALIDATION APPROACH
+infections <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"][, sum(median), by = date][order(date)]
+pos_length <- 1 / 30 # rate of people becoming sero-negative again
+rate_to_neg <- 1 / 60 # rate of people beginnning to test PCR-negative
+sp <- c()
+sp[1] <- 0
+sn <- c()
+sn[1] <- 0
+tp <- c()
+tp[1] <- 0
+for(t in 2:length(infections$V1)) {
+  sp[t] <- sp[t - 1] + infections$V1[t] - (pos_length * sp[t - 1])
+  sn[t] <- sn[t - 1] + (pos_length * sp[t - 1])
+  tp[t] <- tp[t - 1] + infections$V1[t] - (rate_to_neg * tp[t - 1])
+}
+plot(infections$date, cumsum(infections$V1) / 56000000, type = "l", 
+     ylab = "Sero (red) vs PCR (blue) vs True (black) Prevalence",
+     xlab = "Date")
+lines(infections$date, sp / 56000000, col = "red")
+lines(infections$date, tp / 56000000, col = "blue")
