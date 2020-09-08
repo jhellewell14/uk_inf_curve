@@ -1,14 +1,8 @@
-df <- fread("~/repos/uk_inf_curve/ifr_data.csv")
-
-library(ggplot2)
-library(magrittr)
-library(data.table)
-library(patchwork)
-library(MASS)
+df <- data.table::fread(here::here("ifr_data.csv"))
 
 df[, agemid := (agehigh + agelow) / 2] 
 
-fit <- rlm(data = df, boot::logit(middle / 100) ~ agemid, weights = mean_ci, wt.method = "inv.var")
+fit <- lm(data = df, boot::logit(middle / 100) ~ agemid)
 
 preds <- predict(fit, newdata = data.frame(agemid = seq(2, 95, 1)), se.fit = TRUE)
 preds <- data.table(x = seq(2, 95, 1), 

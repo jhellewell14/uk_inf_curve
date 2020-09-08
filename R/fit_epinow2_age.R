@@ -2,6 +2,7 @@ library(data.table)
 library(magrittr)
 library(ggplot2)
 library(scales)
+library(patchwork)
 
 # READ ONS LINELIST
 path_to_factory <- "~/repos/covid19_automation"
@@ -41,14 +42,14 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" 
 #                   ifr = c(0.00161, 0.00695, 0.0309, 0.0844, 0.161, 0.595, 1.93, 4.28, 7.80) / 100)
 
 ## SALJE ESTIMATE AGE GROUPS AND IFR
-agebreaks <- c(0, 20, 30, 40, 50, 60, 70, 80, 100)
-agelabs <- c("0-20", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-100")
-na_fill_group <- "80-100"
-young_groups <- c("0-20", "20-29", "30-39")
-old_ind <- 4
-
-IFR <- data.table(age_grp = agelabs,
-                  ifr = c(0.001, 0.005, 0.02, 0.05, 0.2, 0.7, 1.9, 8.3) / 100)
+# agebreaks <- c(0, 20, 30, 40, 50, 60, 70, 80, 100)
+# agelabs <- c("0-20", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-100")
+# na_fill_group <- "80-100"
+# young_groups <- c("0-20", "20-29", "30-39")
+# old_ind <- 4
+# 
+# IFR <- data.table(age_grp = agelabs,
+#                   ifr = c(0.001, 0.005, 0.02, 0.05, 0.2, 0.7, 1.9, 8.3) / 100)
 
 # 10 year age groups
 # agebreaks <- c(0, 10, 20, 30, 40, 50, 60, 70 ,80, 90, 100)
@@ -65,12 +66,31 @@ IFR <- data.table(age_grp = agelabs,
 #            # ifr = c(1.6e-05, 7e-05, 0.00031, 0.00084, 0.0016, 0.006, 0.019, 0.043, 0.078, 0.078),
 #            ifr = (exp(-8.1290  + (c(5,15,25,35,45,55,65,75,85,95) * 0.1191))) / 100)
 
+## MERGED AGE GROUPS TO PREVENT LOW DEATH PROBLEMS
+## IFR FROM LOGIT-LINEAR MODEL
+agebreaks <- c(0, 50, 60, 70, 85, 100)
+agelabs <- c("0-49", "50-59", "60-69", "70-84", "85-100")
+young_groups <- "0-49"
+old_ind <- 2
+
+midpoints <- c()
+for(i in 2:length(agebreaks)){
+  midpoints[i - 1] <- (agebreaks[i - 1] + agebreaks[i]) / 2
+}
+
+source(here::here("R/fit_IFR_agegroup.R"))
+IFR <- data.table(age_grp = agelabs,
+           ifr = boot::inv.logit(predict(fit, newdata = data.frame(agemid = midpoints))))
+
+
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
 ]
 
-# Assigns deaths to most likely age group
+# Assigns missing age groups randomly using age distribution found in the data set
 # Maybe a better way of doing this
-ons_linelist[is.na(age_grp), age_grp := na_fill_group]
+age_dist <- ons_linelist[, .N, age_grp]
+probs <- age_dist[!is.na(age_grp), N]/sum(age_dist[!is.na(age_grp), N])
+ons_linelist[is.na(age_grp), age_grp := sample(x = agelabs, size = age_dist[is.na(age_grp), N], prob = probs, replace = TRUE)]
 
 ## READ CO-CIN LINELIST
 # Read in data
@@ -92,9 +112,10 @@ cocin_linelist <- cocin_linelist[!onset_date_missing & !outcome_date_missing & d
                                      ][delay >= 0 & delay <= 60 & as.Date(onset_date) > "2020-01-01"
                                        ][, delay_sampled := runif(.N, delay, delay + 1)]
 
-# This again assigns NA age groups to most common category
-cocin_linelist <- cocin_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
-                                 ][is.na(age_grp), age_grp := na_fill_group][order(age_grp)]
+# This again assigns NA age groups by distribution in data again
+cocin_linelist <- cocin_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)]
+
+cocin_linelist <- cocin_linelist[is.na(age_grp), age_grp := sample(agelabs, size = sum(is.na(cocin_linelist$age_grp)), replace = TRUE, prob = probs)][order(age_grp)]
 
 ## SAMPLE REPORTING DELAYS BY AGE
 
@@ -240,7 +261,7 @@ setkey(final_out, date, age_grp, location)
 
 final_out <- merge(final_out, IFR, by = c("age_grp", "location"))
 
-final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+p1 <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
           ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line() +
@@ -250,7 +271,7 @@ final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / if
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Daily infections")
 
-final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+p2 <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
 ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"
   ][order(date)][, .(median = cumsum(median), top = cumsum(top), bottom = cumsum(bottom), date)] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
@@ -261,26 +282,25 @@ final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / if
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Cumulative daily infections")
 
-
+p1 + p2
 
 ### VERY SIMPLE VALIDATION APPROACH
-infections <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
-][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"][, sum(median), by = date][order(date)]
-pos_length <- 1 / 30 # rate of people becoming sero-negative again
-rate_to_neg <- 1 / 60 # rate of people beginnning to test PCR-negative
+infections <- final_out[age_grp == "50-59"][, median := median / ifr]
+pos_length <- 1 / 91.25 # rate of people becoming sero-negative again
+rate_to_neg <- 1 / 91.25 # rate of people beginnning to test PCR-negative
 sp <- c()
 sp[1] <- 0
 sn <- c()
 sn[1] <- 0
 tp <- c()
 tp[1] <- 0
-for(t in 2:length(infections$V1)) {
-  sp[t] <- sp[t - 1] + infections$V1[t] - (pos_length * sp[t - 1])
+for(t in 2:length(infections$median)) {
+  sp[t] <- sp[t - 1] + infections$median[t] - (pos_length * sp[t - 1])
   sn[t] <- sn[t - 1] + (pos_length * sp[t - 1])
-  tp[t] <- tp[t - 1] + infections$V1[t] - (rate_to_neg * tp[t - 1])
+  tp[t] <- tp[t - 1] + infections$median[t] - (rate_to_neg * tp[t - 1])
 }
-plot(infections$date, cumsum(infections$V1) / 56000000, type = "l", 
+plot(infections$date, cumsum(infections$median) / 7578112, type = "l", 
      ylab = "Sero (red) vs PCR (blue) vs True (black) Prevalence",
      xlab = "Date")
-lines(infections$date, sp / 56000000, col = "red")
-lines(infections$date, tp / 56000000, col = "blue")
+lines(infections$date, sp / 7578112, col = "red")
+lines(infections$date, tp / 7578112, col = "blue")
