@@ -68,9 +68,9 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" 
 
 ## MERGED AGE GROUPS TO PREVENT LOW DEATH PROBLEMS
 ## IFR FROM LOGIT-LINEAR MODEL
-agebreaks <- c(0, 50, 60, 70, 85, 100)
-agelabs <- c("0-49", "50-59", "60-69", "70-84", "85-100")
-young_groups <- "0-49"
+agebreaks <- c(0, 40, 50, 60, 70, 85, 100)
+agelabs <- c("0-39", "40-49", "50-59", "60-69", "70-84", "85-100")
+young_groups <- "0-39"
 old_ind <- 2
 
 midpoints <- c()
@@ -257,6 +257,17 @@ IFR <- melt(IFR, id.vars = c("age_grp", "ifr"), measure.vars = c("community", "c
 setkey(IFR, age_grp, location)
 
 final_out <- fr[type == "estimate" & variable == "infections"]
+
+x <- final_out[age_grp == "0-39", median]
+
+y <- c()
+win <- 7
+for(i in 1:length(x)) {
+  y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x), length(x), i + win)])
+}
+
+final_out[age_grp == "0-39", median := y]
+
 setkey(final_out, date, age_grp, location)
 
 final_out <- merge(final_out, IFR, by = c("age_grp", "location"))
