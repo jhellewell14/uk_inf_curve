@@ -1,4 +1,4 @@
-df <- data.table::fread(here::here("ifr_data.csv"))
+df <- data.table::fread(here::here("data/ifr_data.csv"))
 
 df[, agemid := (agehigh + agelow) / 2] 
 

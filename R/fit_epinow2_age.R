@@ -303,6 +303,57 @@ p2 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom =
 
 p1 + p2
 
+
+## READ IN AND FORMAT REACT STUDY DATA
+
+sero <- fread("data/react_results.csv")[study %in% c("React 1", "React 2")]
+
+sero <- sero[, age_grp := paste0(age_lower, "-", age_upper)
+             ][age_upper >= 18]
+
+sero[, start_date := as.Date(start_date, format = "%d-%m-%Y")
+     ][, end_date := as.Date(end_date, format = "%d-%m-%Y")]
+
+
+
+## READ IN POPULATION DATA
+population <- fread("data/age_collated.csv", header = TRUE)
+
+population$age_grp <- as.factor(population$age_grp)
+
+
+## PLOT RESULTS FOR REACT 1 (SWAB) STUDY
+## This requires merging age groups
+pop_react1 <- population
+pop_react1$age_grp <- rockchalk::combineLevels(pop_react1$age_grp, levs = c("65-74", "75-100"), newLabel = "65-100")
+pop_react1 <- pop_react1[, .(age = sum(Age_2020)), by = age_grp]
+
+final_out_react1 <- final_out[, .(age_grp, date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)]
+
+final_out_react1$age_grp <- as.factor(final_out_react1$age_grp)
+final_out_react1$age_grp <- rockchalk::combineLevels(final_out_react1$age_grp, levs = c("65-74", "75-100"), newLabel = "65-100")
+
+final_out_react1 <- final_out_react1[, .(age_grp, date, bottom, top, median)][, .(bottom = sum(bottom), median = sum(median), top = sum(top)), by = c("age_grp", "date")]
+
+final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")
+
+final_out_react1[age_grp != "0-34"] %>%
+  ggplot(aes(x = date, y = median / age, ymin = bottom / age, ymax = top / age)) +
+  geom_line() +
+  geom_ribbon(alpha = 0.4) +
+  scale_y_continuous(labels = comma) +
+  geom_vline(xintercept = as.Date("2020-03-23")) +
+  cowplot::theme_cowplot() +
+  ggplot2::labs(x = "Date", y = "Prevalence (%)") +
+  facet_wrap(~ age_grp) +
+  geom_errorbarh(data = subset(sero, study == "React 1" & age_grp != "18-24" & age_grp != "25-34"), 
+                 inherit.aes = FALSE, aes(xmin = as.Date(start_date), xmax = as.Date(end_date), 
+                                          y = seroprev / 100, group = age_grp), col = "red4") +
+  geom_errorbar(data = subset(sero, study == "React 1" & age_grp != "18-24" & age_grp != "25-34"), 
+                inherit.aes = FALSE, aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100),
+                col = "red4", width = 10)
+
+
 ### VERY SIMPLE VALIDATION APPROACH
 infections <- final_out[age_grp == "50-59"][, median := median / ifr]
 pos_length <- 1 / 91.25 # rate of people becoming sero-negative again
