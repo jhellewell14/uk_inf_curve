@@ -306,7 +306,7 @@ p1 + p2
 
 ## READ IN AND FORMAT REACT STUDY DATA
 
-sero <- fread("data/react_results.csv")[study %in% c("React 1", "React 2")]
+sero <- fread(here::here("data/react_results.csv"))[study %in% c("React 1", "React 2")]
 
 sero <- sero[, age_grp := paste0(age_lower, "-", age_upper)
              ][age_upper >= 18]
@@ -317,7 +317,7 @@ sero[, start_date := as.Date(start_date, format = "%d-%m-%Y")
 
 
 ## READ IN POPULATION DATA
-population <- fread("data/age_collated.csv", header = TRUE)
+population <- fread(here::here("data/age_collated.csv"), header = TRUE)
 
 population$age_grp <- as.factor(population$age_grp)
 
