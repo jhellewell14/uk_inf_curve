@@ -68,9 +68,12 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" 
 
 ## MERGED AGE GROUPS TO PREVENT LOW DEATH PROBLEMS
 ## IFR FROM LOGIT-LINEAR MODEL
-agebreaks <- c(0, 40, 50, 60, 70, 85, 100)
-agelabs <- c("0-39", "40-49", "50-59", "60-69", "70-84", "85-100")
-young_groups <- "0-39"
+# agebreaks <- c(0, 18, 25, 35, 45, 55, 65, 75, 100)
+# agelabs <- c("0-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65-74","75-100")
+
+agebreaks <- c(0, 35, 45, 55, 65, 75, 100)
+agelabs <- c("0-34", "35-44", "45-54", "55-64", "65-74","75-100")
+young_groups <- "0-34"
 old_ind <- 2
 
 midpoints <- c()
@@ -79,8 +82,13 @@ for(i in 2:length(agebreaks)){
 }
 
 source(here::here("R/fit_IFR_agegroup.R"))
+
+preds <- predict(fit, newdata = data.frame(agemid = midpoints), se.fit = TRUE)
+
 IFR <- data.table(age_grp = agelabs,
-           ifr = boot::inv.logit(predict(fit, newdata = data.frame(agemid = midpoints))))
+           ifr = boot::inv.logit(preds$fit),
+           lower = boot::inv.logit(preds$fit - 1.96*preds$se.fit),
+           upper = boot::inv.logit(preds$fit + 1.96*preds$se.fit))
 
 
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
@@ -88,7 +96,7 @@ ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right =
 
 # Assigns missing age groups randomly using age distribution found in the data set
 # Maybe a better way of doing this
-age_dist <- ons_linelist[, .N, age_grp]
+age_dist <- ons_linelist[, .N, age_grp][order(age_grp)]
 probs <- age_dist[!is.na(age_grp), N]/sum(age_dist[!is.na(age_grp), N])
 ons_linelist[is.na(age_grp), age_grp := sample(x = agelabs, size = age_dist[is.na(age_grp), N], prob = probs, replace = TRUE)]
 
