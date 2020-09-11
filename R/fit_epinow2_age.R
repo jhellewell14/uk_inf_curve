@@ -87,8 +87,8 @@ preds <- predict(fit, newdata = data.frame(agemid = midpoints), se.fit = TRUE)
 
 IFR <- data.table(age_grp = agelabs,
            ifr = boot::inv.logit(preds$fit),
-           lower = boot::inv.logit(preds$fit - 1.96*preds$se.fit),
-           upper = boot::inv.logit(preds$fit + 1.96*preds$se.fit))
+           ifr_lower = boot::inv.logit(preds$fit - 1.96*preds$se.fit),
+           ifr_upper = boot::inv.logit(preds$fit + 1.96*preds$se.fit))
 
 
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
@@ -261,7 +261,7 @@ temp_ch <- temp_ch[levels(age_grp), .N, by = .EACHI]
 IFR$community <- ons_linelist[ons == "reported_by_ons" & care_home_death == "Other"][, .N, by = age_grp][, prop := N / sum(N)][order(age_grp)][, prop]
 IFR$carehome <- temp_ch$N / sum(temp_ch$N)
 
-IFR <- melt(IFR, id.vars = c("age_grp", "ifr"), measure.vars = c("community", "carehome"))[, .(age_grp, location = variable, ifr)]
+IFR <- melt(IFR, id.vars = c("age_grp", "ifr", "ifr_lower", "ifr_upper"), measure.vars = c("community", "carehome"))[, .(age_grp, location = variable, ifr, ifr_upper, ifr_lower)]
 setkey(IFR, age_grp, location)
 
 final_out <- fr[type == "estimate" & variable == "infections"]
@@ -280,7 +280,7 @@ setkey(final_out, date, age_grp, location)
 
 final_out <- merge(final_out, IFR, by = c("age_grp", "location"))
 
-p1 <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+p1 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
           ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line() +
@@ -290,7 +290,7 @@ p1 <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = botto
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Daily infections")
 
-p2 <- final_out[, .(date, median = median / ifr, top = top / ifr, bottom = bottom / ifr)
+p2 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
 ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"
   ][order(date)][, .(median = cumsum(median), top = cumsum(top), bottom = cumsum(bottom), date)] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
