@@ -322,6 +322,17 @@ population <- fread("data/age_collated.csv", header = TRUE)
 population$age_grp <- as.factor(population$age_grp)
 
 
+### VERY SIMPLE COMPARTMENTAL DECAY APPROACH
+decay_inf <- function(x, decay_rate, test_sens, test_spec) {
+  out <- c()
+  out[1] <- x[1]
+  for(t in 2:length(x)) {
+    out[t] <- out[t - 1] + x[t] - (decay_rate * out[t - 1])
+  }
+  return(out * test_sens)
+}
+
+
 ## PLOT RESULTS FOR REACT 1 (SWAB) STUDY
 ## This requires merging age groups
 pop_react1 <- population
@@ -337,8 +348,13 @@ final_out_react1 <- final_out_react1[, .(age_grp, date, bottom, top, median)][, 
 
 final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")
 
+final_out_react1[, dec_prev := decay_inf(median, decay_rate = 1 / 10, test_sens = 0.83, test_spec = 0.993), by = age_grp]
+final_out_react1[, dec_bot := decay_inf(bottom, decay_rate = 1 / 10, test_sens = 0.83, test_spec = 0.993), by = age_grp]
+final_out_react1[, dec_top := decay_inf(top, decay_rate = 1 / 10, test_sens = 0.83, test_spec = 0.993), by = age_grp]
+
+
 final_out_react1[age_grp != "0-34"] %>%
-  ggplot(aes(x = date, y = median / age, ymin = bottom / age, ymax = top / age)) +
+  ggplot(aes(x = date, y = dec_prev / age, ymin = dec_bot / age, ymax = dec_top / age)) +
   geom_line() +
   geom_ribbon(alpha = 0.4) +
   scale_y_continuous(labels = comma) +
@@ -346,31 +362,14 @@ final_out_react1[age_grp != "0-34"] %>%
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Prevalence (%)") +
   facet_wrap(~ age_grp) +
-  geom_errorbarh(data = subset(sero, study == "React 1" & age_grp != "18-24" & age_grp != "25-34"), 
-                 inherit.aes = FALSE, aes(xmin = as.Date(start_date), xmax = as.Date(end_date), 
+  geom_errorbarh(data = subset(sero, study == "React 1" & age_grp != "18-24" & age_grp != "25-34"),
+                 inherit.aes = FALSE, aes(xmin = as.Date(start_date), xmax = as.Date(end_date), width = 0,
                                           y = seroprev / 100, group = age_grp), col = "red4") +
-  geom_errorbar(data = subset(sero, study == "React 1" & age_grp != "18-24" & age_grp != "25-34"), 
+  geom_errorbar(data = subset(sero, study == "React 1" & age_grp != "18-24" & age_grp != "25-34"),
                 inherit.aes = FALSE, aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100),
-                col = "red4", width = 10)
+                col = "red4", width = 0)
 
 
-### VERY SIMPLE VALIDATION APPROACH
-infections <- final_out[age_grp == "50-59"][, median := median / ifr]
-pos_length <- 1 / 91.25 # rate of people becoming sero-negative again
-rate_to_neg <- 1 / 91.25 # rate of people beginnning to test PCR-negative
-sp <- c()
-sp[1] <- 0
-sn <- c()
-sn[1] <- 0
-tp <- c()
-tp[1] <- 0
-for(t in 2:length(infections$median)) {
-  sp[t] <- sp[t - 1] + infections$median[t] - (pos_length * sp[t - 1])
-  sn[t] <- sn[t - 1] + (pos_length * sp[t - 1])
-  tp[t] <- tp[t - 1] + infections$median[t] - (rate_to_neg * tp[t - 1])
-}
-plot(infections$date, cumsum(infections$median) / 7578112, type = "l", 
-     ylab = "Sero (red) vs PCR (blue) vs True (black) Prevalence",
-     xlab = "Date")
-lines(infections$date, sp / 7578112, col = "red")
-lines(infections$date, tp / 7578112, col = "blue")
+
+
+
