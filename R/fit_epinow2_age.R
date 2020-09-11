@@ -348,10 +348,14 @@ final_out_react1 <- final_out_react1[, .(age_grp, date, bottom, top, median)][, 
 
 final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")
 
-final_out_react1[, dec_prev := decay_inf(median, decay_rate = 1 / 10, test_sens = 0.83, test_spec = 0.993), by = age_grp]
-final_out_react1[, dec_bot := decay_inf(bottom, decay_rate = 1 / 10, test_sens = 0.83, test_spec = 0.993), by = age_grp]
-final_out_react1[, dec_top := decay_inf(top, decay_rate = 1 / 10, test_sens = 0.83, test_spec = 0.993), by = age_grp]
+# Average time after infection to test negative
+av_test_neg <- 30
+pcr_sensitivity <- 0.83
+pcr_specificity <- 0.933
 
+final_out_react1[, dec_prev := decay_inf(median, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
+final_out_react1[, dec_bot := decay_inf(bottom, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
+final_out_react1[, dec_top := decay_inf(top, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
 
 final_out_react1[age_grp != "0-34"] %>%
   ggplot(aes(x = date, y = dec_prev / age, ymin = dec_bot / age, ymax = dec_top / age)) +
@@ -369,6 +373,25 @@ final_out_react1[age_grp != "0-34"] %>%
                 inherit.aes = FALSE, aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100),
                 col = "red4", width = 0)
 
+## PLOT RESULTS FOR REACT 2
+
+# Average time to sero-reversion
+av_sero <- 100
+sero_sensitivity <- 1
+sero_specificity <- 1
+
+final_out[age_grp != "0-34"
+          ][, dec_inf := decay_inf(median / ifr, 1 / av_sero, 1, 1), age_grp
+            ][, dec_bot := decay_inf(bottom / ifr_upper, 1 / av_sero, 1, 1), age_grp
+              ][, dec_top := decay_inf(top / ifr_lower, 1 / av_sero, 1, 1), age_grp] %>%
+  ggplot(aes(x = date, y = dec_inf / Age_2020, ymin = dec_bot / Age_2020, ymax = dec_top / Age_2020)) + 
+  geom_line() + 
+  geom_ribbon(alpha = 0.4) +
+  facet_wrap(~ age_grp) +
+  geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
+  geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
+  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
+  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE)
 
 
 
