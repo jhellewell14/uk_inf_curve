@@ -376,8 +376,8 @@ final_out_react1[age_grp != "0-34"] %>%
 ## PLOT RESULTS FOR REACT 2
 
 # Average time to sero-reversion
-av_sero <- 100
-sero_sensitivity <- 1
+av_sero <- 80
+sero_sensitivity <- 0.9
 sero_specificity <- 1
 
 final_out[age_grp != "0-34"
