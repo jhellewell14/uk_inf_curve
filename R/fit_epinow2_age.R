@@ -240,9 +240,27 @@ carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = death
 
 fr2 <- carehome_fit$summarised[, location := "Care home"]
 
+## Hospital acquired infection
+
+hosp_acq_prop <- 0.11
+
+hosp <- fr[type == "estimate" & variable == "infections" & location == "community"]
+
+hosp[, location := "hospital"]
+
+cols <- c("bottom", "top", "lower", "upper", "median", "mean")
+hosp[, (cols) := lapply(.SD, "*", hosp_acq_prop), .SDcols = cols]
+
+
+fr[type == "estimate" & variable == "infections" & location == "community", (cols) := lapply(.SD, "*", 1 - hosp_acq_prop), .SDcols = cols]
+
+fr <- rbind(fr, hosp)
+
+## Plot all three curves
+
 joint_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
-                               ][, .(median = sum(median), top = sum(top), bottom = sum(bottom), location = location[1]), by = date], 
-               fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]))
+                               ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = c("date", "location")], 
+               fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]), use.names = TRUE)
 
 joint_out %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
@@ -266,6 +284,8 @@ setkey(IFR, age_grp, location)
 
 final_out <- fr[type == "estimate" & variable == "infections"]
 
+
+## Smooth youngest age group cases
 x <- final_out[age_grp == "0-39", median]
 
 y <- c()
@@ -278,6 +298,7 @@ final_out[age_grp == "0-39", median := y]
 
 setkey(final_out, date, age_grp, location)
 
+## Final plots
 final_out <- merge(final_out, IFR, by = c("age_grp", "location"))
 
 p1 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
@@ -322,6 +343,9 @@ population <- fread(here::here("data/age_collated.csv"), header = TRUE)
 population$age_grp <- as.factor(population$age_grp)
 
 
+final_out <- merge(final_out, population, by = "age_grp")
+
+
 ### VERY SIMPLE COMPARTMENTAL DECAY APPROACH
 decay_inf <- function(x, decay_rate, test_sens, test_spec) {
   out <- c()
@@ -349,7 +373,7 @@ final_out_react1 <- final_out_react1[, .(age_grp, date, bottom, top, median)][, 
 final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")
 
 # Average time after infection to test negative
-av_test_neg <- 30
+av_test_neg <- 10
 pcr_sensitivity <- 0.83
 pcr_specificity <- 0.933
 
@@ -376,7 +400,7 @@ final_out_react1[age_grp != "0-34"] %>%
 ## PLOT RESULTS FOR REACT 2
 
 # Average time to sero-reversion
-av_sero <- 80
+av_sero <- 30*6
 sero_sensitivity <- 0.9
 sero_specificity <- 1
 
@@ -391,7 +415,10 @@ final_out[age_grp != "0-34"
   geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
-  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE)
+  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
+  scale_y_continuous(breaks = seq(0, 0.13, 0.01), labels = seq(0, 13, 1)) +
+  labs(y = "Seroprevalence (%)", x = "Date", title  = paste0("Average time to sero-reversion: ", av_sero, " days")) +
+  cowplot::theme_minimal_grid()
 
 
 
