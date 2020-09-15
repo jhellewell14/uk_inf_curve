@@ -209,6 +209,14 @@ joint_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
                                ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = c("date", "location")], 
                fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]), use.names = TRUE)
 
+##########################################################################################
+## Move back hospital infections to account for time from infetion to hospitalisation? ##
+##########################################################################################
+
+joint_out[location == "hospital", date := date - 5]
+
+## Plot
+
 joint_out %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line(aes(col = location)) +
@@ -232,16 +240,24 @@ setkey(IFR, age_grp, location)
 final_out <- fr[type == "estimate" & variable == "infections"]
 
 
-## Smooth youngest age group cases
+## Smooth youngest age group cases 
 x <- final_out[age_grp == "0-39", median]
+x_lower <- final_out[age_grp == "0-39", lower]
+x_upper <- final_out[age_grp == "0-39", upper]
 
 y <- c()
+y_lower <- c()
+y_upper <- c()
 win <- 7
 for(i in 1:length(x)) {
   y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x), length(x), i + win)])
+  y_lower[i] <- mean(x_lower[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x_lower), length(x_lower), i + win)])
+  y_upper[i] <- mean(x_upper[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x_upper), length(x_upper), i + win)])
 }
 
 final_out[age_grp == "0-39", median := y]
+final_out[age_grp == "0-39", lower := y_lower]
+final_out[age_grp == "0-39", upper := y_upper]
 
 setkey(final_out, date, age_grp, location)
 
@@ -344,6 +360,24 @@ final_out_react1[age_grp != "0-34"] %>%
                 inherit.aes = FALSE, aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100),
                 col = "red4", width = 0) +
   scale_y_continuous(breaks = seq(0, 0.04, 0.01), labels = seq(0, 4, 1))
+
+
+## ALTERNATIVE REACT 1 PLOT
+plot_dt <- merge(final_out_react1[age_grp != "0-34"], sero[study == "React 1" & age_lower >= 35 & round <= 2], by = "age_grp", allow.cartesian = TRUE)
+plot_dt[date >= start_date & date <= end_date
+][, .(median = median(dec_prev / age), 
+      top = median(dec_top / age),
+      bottom = median(dec_bot / age),
+      prev = unique(seroprev) / 100, 
+      lower = unique(lower) / 100, 
+      upper = unique(upper) / 100), list(age_grp, round)] %>%
+  ggplot() +
+  geom_errorbar(aes(x = age_grp, ymin = bottom, ymax = top)) + 
+  geom_errorbar(aes(x = age_grp, ymin = lower, ymax = upper), col = "red4") +
+  facet_wrap(~ round) +
+  cowplot::theme_minimal_grid() +
+  scale_y_continuous(breaks = seq(0, 0.005, 0.001), labels = seq(0, 0.5, 0.1)) +
+  labs(y = "PCR prevalence (%)", x = "Age group")
 
 ## PLOT RESULTS FOR REACT 2
 
