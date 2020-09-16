@@ -1,11 +1,20 @@
 df <- data.table::fread(here::here("data/ifr_data.csv"))
 
-df[, agemid := (agehigh + agelow) / 2] 
+df[, agemid := (agehigh + agelow) / 2][, log_mid := boot::logit(middle / 100)] 
 
-fit <- lm(data = df, boot::logit(middle / 100) ~ agemid)
+# fit <- lm(data = df, boot::logit(middle / 100) ~ agemid)
+# library(mgcv)
+# fit <- gam(data = df, formula = boot::logit(middle / 100) ~ agemid)
+library(rstanarm)
+fit <- stan_glm(data = df, formula = log_mid ~ agemid, 
+                family = gaussian(),
+                prior =  student_t(df = 7, 0, 5),
+                prior_intercept =  student_t(df = 7, 0, 5),
+                cores = 4)
 
-preds <- predict(fit, newdata = data.frame(agemid = seq(2, 95, 1)), se.fit = TRUE)
-preds <- data.table(x = seq(2, 95, 1), 
+
+preds <- predict(fit, newdata = data.frame(agemid = seq(2, max(df$agemid), 1)), se.fit = TRUE)
+preds <- data.table(x = seq(2, max(df$agemid), 1), 
                     y = preds$fit, 
                     ymin = preds$fit - 1.96 * preds$se.fit,
                     ymax = preds$fit + 1.96 * preds$se.fit)
