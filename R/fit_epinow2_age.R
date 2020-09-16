@@ -51,7 +51,7 @@ ons_linelist[is.na(age_grp), age_grp := sample(x = agelabs, size = age_dist[is.n
 
 ## READ CO-CIN LINELIST
 # Read in data
-data <- data.table::fread("~/Downloads/CCPUKSARI_DATA_2020-08-04_0947.csv", na.strings = "")
+data <- data.table::fread("~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv", na.strings = "")
 
 # Select columns + fix read in issue where entries are "" instead of NA
 cocin_linelist <- data[,.(cestdat, dsstdtc, dsterm, subjid, age = age_estimateyears)]
@@ -196,12 +196,14 @@ hosp_acq_prop <- 0.11
 hosp <- fr[type == "estimate" & variable == "infections" & location == "community"]
 
 hosp[, location := "hospital"]
+hosp <- merge(hosp, hosp_rate, by = "age_grp")
 
 cols <- c("bottom", "top", "lower", "upper", "median", "mean")
-hosp[, (cols) := lapply(.SD, "*", hosp_acq_prop), .SDcols = cols]
 
+hosp[, (cols) := lapply(.SD, "*", hosp_acq_prop * hosp_rate * prop_of_hosp_acq), .SDcols = cols]
 
-fr[type == "estimate" & variable == "infections" & location == "community", (cols) := lapply(.SD, "*", 1 - hosp_acq_prop), .SDcols = cols]
+fr <- merge(fr, hosp_rate, by = "age_grp")
+fr[type == "estimate" & variable == "infections" & location == "community", (cols) := lapply(.SD, "*", 1 - (hosp_acq_prop * hosp_rate * prop_of_hosp_acq)), .SDcols = cols]
 
 fr <- rbind(fr, hosp)
 
@@ -212,7 +214,7 @@ joint_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
                fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]), use.names = TRUE)
 
 ##########################################################################################
-## Move back hospital infections to account for time from infetion to hospitalisation? ##
+## Move back hospital infections to account for time from infection to hospitalisation? ##
 ##########################################################################################
 
 joint_out[location == "hospital", date := date - 5]
@@ -397,7 +399,6 @@ final_out[age_grp != "0-34"
   geom_ribbon(alpha = 0.4) +
   facet_wrap(~ age_grp) +
   geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date + (end_date - start_date) / 2, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
-  # geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
   geom_errorbarh(data = subset(sero, study == "React 2" & age_lower >= 35), aes(xmin = start_date, xmax = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   scale_y_continuous(breaks = seq(0, 0.13, 0.01), labels = seq(0, 13, 1)) +
