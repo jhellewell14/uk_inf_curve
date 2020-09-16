@@ -3,6 +3,8 @@ library(magrittr)
 library(ggplot2)
 library(scales)
 library(patchwork)
+library(rstanarm)
+options(mc.cores = parallel::detectCores())
 
 # READ ONS LINELIST
 path_to_factory <- "~/repos/covid19_automation"
@@ -394,10 +396,10 @@ final_out[age_grp != "0-34"
   geom_line() + 
   geom_ribbon(alpha = 0.4) +
   facet_wrap(~ age_grp) +
-  geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
-  geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
-  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
-  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
+  geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date + (end_date - start_date) / 2, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
+  # geom_point(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
+  geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 35), aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
+  geom_errorbarh(data = subset(sero, study == "React 2" & age_lower >= 35), aes(xmin = start_date, xmax = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   scale_y_continuous(breaks = seq(0, 0.13, 0.01), labels = seq(0, 13, 1)) +
   labs(y = "Seroprevalence (%)", x = "Date", title  = paste0("Average time to sero-reversion: ", av_sero, " days")) +
   cowplot::theme_minimal_grid()
