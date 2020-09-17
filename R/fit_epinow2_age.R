@@ -229,23 +229,23 @@ final_out <- fr[type == "estimate" & variable == "infections"]
 
 
 ## Smooth youngest age group cases 
-x <- final_out[age_grp == "0-39", median]
-x_lower <- final_out[age_grp == "0-39", lower]
-x_upper <- final_out[age_grp == "0-39", upper]
+x <- final_out[age_grp == "0-34", median]
+x_lower <- final_out[age_grp == "0-34", lower]
+x_upper <- final_out[age_grp == "0-34", upper]
 
 y <- c()
 y_lower <- c()
 y_upper <- c()
-win <- 7
+win <- 14
 for(i in 1:length(x)) {
   y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x), length(x), i + win)])
   y_lower[i] <- mean(x_lower[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x_lower), length(x_lower), i + win)])
   y_upper[i] <- mean(x_upper[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x_upper), length(x_upper), i + win)])
 }
 
-final_out[age_grp == "0-39", median := y]
-final_out[age_grp == "0-39", lower := y_lower]
-final_out[age_grp == "0-39", upper := y_upper]
+final_out[age_grp == "0-34", median := y]
+final_out[age_grp == "0-34", lower := y_lower]
+final_out[age_grp == "0-34", upper := y_upper]
 
 setkey(final_out, date, age_grp, location)
 
@@ -273,7 +273,7 @@ p2 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom =
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Cumulative daily infections")
 
-p1 + p2
+# p1 + p2
 
 
 ## READ IN AND FORMAT REACT STUDY DATA
