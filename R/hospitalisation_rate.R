@@ -39,3 +39,24 @@ hosp_rate$top_hosp_rate <- (preds$fit + 1.96 * preds$se.fit) / 100
 hosp_rate[bottom_hosp_rate < 0, bottom_hosp_rate := 0]
 
 hosp_rate <- merge(hosp_rate, hosp_age_prop, by = "age_grp")
+
+
+# old
+## Hospital acquired infection
+# source("R/hospitalisation_rate.R")
+# 
+# hosp_acq_prop <- 0.11
+# 
+# hosp <- fr[type == "estimate" & variable == "infections" & location == "community"]
+# 
+# hosp[, location := "hospital"]
+# hosp <- merge(hosp, hosp_rate, by = "age_grp")
+# 
+# cols <- c("bottom", "top", "lower", "upper", "median", "mean")
+# 
+# hosp[, (cols) := lapply(.SD, "*", hosp_acq_prop * hosp_rate * prop_of_hosp_acq), .SDcols = cols]
+# 
+# fr <- merge(fr, hosp_rate, by = "age_grp")
+# fr[type == "estimate" & variable == "infections" & location == "community", (cols) := lapply(.SD, "*", 1 - (hosp_acq_prop * hosp_rate * prop_of_hosp_acq)), .SDcols = cols]
+# 
+# fr <- rbind(fr, hosp)

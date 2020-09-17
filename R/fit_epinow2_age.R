@@ -189,23 +189,7 @@ carehome_fit <- estimates <- EpiNow2::estimate_infections(reported_cases = death
 
 fr2 <- carehome_fit$summarised[, location := "Care home"]
 
-## Hospital acquired infection
 
-hosp_acq_prop <- 0.11
-
-hosp <- fr[type == "estimate" & variable == "infections" & location == "community"]
-
-hosp[, location := "hospital"]
-hosp <- merge(hosp, hosp_rate, by = "age_grp")
-
-cols <- c("bottom", "top", "lower", "upper", "median", "mean")
-
-hosp[, (cols) := lapply(.SD, "*", hosp_acq_prop * hosp_rate * prop_of_hosp_acq), .SDcols = cols]
-
-fr <- merge(fr, hosp_rate, by = "age_grp")
-fr[type == "estimate" & variable == "infections" & location == "community", (cols) := lapply(.SD, "*", 1 - (hosp_acq_prop * hosp_rate * prop_of_hosp_acq)), .SDcols = cols]
-
-fr <- rbind(fr, hosp)
 
 ## Plot all three curves
 
