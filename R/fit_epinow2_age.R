@@ -234,25 +234,34 @@ setkey(IFR, age_grp, location)
 
 final_out <- fr[type == "estimate" & variable == "infections"]
 
+# Pad out early zeros in young age groups that EpiNow2 has stripped out
+final_out <- final_out[final_out[, .(date = seq.Date(from = min(final_out$date), to = max(final_out$date), by = "day")),
+                                 by = .(age_grp)],
+                       on = .(age_grp, date),
+                       roll = 0][is.na(median), c("median", "top", "bottom", "location") := list(0, 0, 0, "community")]
 
-## Smooth youngest age group cases 
-# x <- final_out[age_grp == "0-34", median]
-# x_lower <- final_out[age_grp == "0-34", lower]
-# x_upper <- final_out[age_grp == "0-34", upper]
-# 
-# y <- c()
-# y_lower <- c()
-# y_upper <- c()
-# win <- 14
-# for(i in 1:length(x)) {
-#   y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x), length(x), i + win)])
-#   y_lower[i] <- mean(x_lower[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x_lower), length(x_lower), i + win)])
-#   y_upper[i] <- mean(x_upper[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x_upper), length(x_upper), i + win)])
-# }
-# 
-# final_out[age_grp == "0-34", median := y]
-# final_out[age_grp == "0-34", lower := y_lower]
-# final_out[age_grp == "0-34", upper := y_upper]
+
+## Function to smooth youngest age group cases 
+smooth_agegrp <- function(x, win = 21){
+  y <- c()
+  for(i in 1:length(x)) {
+    y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x), length(x), i + win)])
+  }
+  return(y)
+}
+
+
+## Smooth young age groups
+final_out[age_grp %in% young_groups, median := smooth_agegrp(median), by = age_grp]
+final_out[age_grp %in% young_groups, top := smooth_agegrp(top), by = age_grp]
+final_out[age_grp %in% young_groups, bottom := smooth_agegrp(bottom), by = age_grp]
+
+
+final_out[age_grp %in% young_groups] %>%
+  ggplot(aes(x = date, y = median)) +
+  geom_line() +
+  facet_wrap(~ age_grp, scales = "free_y") +
+  geom_ribbon(aes(ymin = bottom, ymax = top), alpha = 0.5)
 
 setkey(final_out, date, age_grp, location)
 
@@ -405,7 +414,7 @@ final_out_react1 %>%
 
 
 ## ALTERNATIVE REACT 1 PLOT
-plot_dt <- merge(final_out_react1[age_grp != "0-34"], sero[study == "React 1" & age_lower >= 35 & round <= 2], by = "age_grp", allow.cartesian = TRUE)
+plot_dt <- merge(final_out_react1[age_grp != "0-34"], sero[study == "React 1" & age_lower >= 35 & round <= 3], by = "age_grp", allow.cartesian = TRUE)
 plot_dt[date >= start_date & date <= end_date
 ][, .(median = median(dec_prev / age), 
       top = median(dec_top / age),
@@ -430,9 +439,11 @@ sero_specificity <- 1
 
 final_out_react2 <- merge(final_out_react2, pop_react2, by = "age_grp")[order(age_grp, date)]
 
-final_out_react2[, dec_inf := decay_inf(median, 1 / av_sero, 1, 1), age_grp
-            ][, dec_bot := decay_inf(bottom, 1 / av_sero, 1, 1), age_grp
-              ][, dec_top := decay_inf(top, 1 / av_sero, 1, 1), age_grp] %>%
+final_out_react2[, dec_inf := decay_inf(median, 1 / av_sero, 1, 1), age_grp]
+final_out_react2[, dec_bot := decay_inf(bottom, 1 / av_sero, 1, 1), age_grp]
+final_out_react2[, dec_top := decay_inf(top, 1 / av_sero, 1, 1), age_grp] 
+
+final_out_react2 %>%
   ggplot(aes(x = date, y = dec_inf / population, ymin = dec_bot / population, ymax = dec_top / population)) + 
   geom_line() + 
   geom_ribbon(alpha = 0.4) + 
