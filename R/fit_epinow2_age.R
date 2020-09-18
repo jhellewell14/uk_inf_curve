@@ -110,7 +110,9 @@ deaths_community <- ons_linelist[ons == "reported_by_ons" & care_home_death == "
 ][,.(age_grp, date, confirm)]
 
 ## Fill out and assign zero to dates where there were no deaths in an age group
-deaths_community <- deaths_community[deaths_community[, .(date = seq.Date(from = min(date), to = max(date), by = "day")),
+min_date <- min(deaths_community$date)
+max_date <- max(deaths_community$date)
+deaths_community <- deaths_community[deaths_community[, .(date = seq.Date(from = min_date, to = max_date, by = "day")),
                                  by = .(age_grp)],
                     on = .(age_grp, date),
                     roll = 0][is.na(confirm), confirm := 0][order(age_grp, date)]
@@ -142,7 +144,7 @@ for(i in 1:length(agelabs)){
                                             generation_time = generation_time,
                                             estimate_rt = FALSE, fixed = FALSE,
                                             delays = list(incubation_period, reporting_delay),
-                                            horizon = 7, samples = 4000, warmup = 500, 
+                                            horizon = 0, samples = 4000, warmup = 500, 
                                             cores = 4, chains = 4, verbose = TRUE, 
                                             adapt_delta = 0.95)
   
@@ -377,7 +379,7 @@ av_test_neg <- 10
 pcr_sensitivity <- 1
 pcr_specificity <- 1
 
-final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")
+final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")[order(age_grp, date)]
 
 # Create decayed prevalence variables
 final_out_react1[, dec_prev := decay_inf(median, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
@@ -426,7 +428,7 @@ av_sero <- 365
 sero_sensitivity <- 1
 sero_specificity <- 1
 
-final_out_react2 <- merge(final_out_react2, pop_react2, by = "age_grp")
+final_out_react2 <- merge(final_out_react2, pop_react2, by = "age_grp")[order(age_grp, date)]
 
 final_out_react2[, dec_inf := decay_inf(median, 1 / av_sero, 1, 1), age_grp
             ][, dec_bot := decay_inf(bottom, 1 / av_sero, 1, 1), age_grp
