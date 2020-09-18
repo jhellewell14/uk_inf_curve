@@ -110,7 +110,7 @@ deaths_community <- ons_linelist[ons == "reported_by_ons" & care_home_death == "
 ][,.(age_grp, date, confirm)]
 
 ## Fill out and assign zero to dates where there were no deaths in an age group
-min_date <- min(deaths_community$date)
+min_date <- min(deaths_community$date) - 10
 max_date <- max(deaths_community$date)
 deaths_community <- deaths_community[deaths_community[, .(date = seq.Date(from = min_date, to = max_date, by = "day")),
                                  by = .(age_grp)],
@@ -436,7 +436,7 @@ final_out_react2[, dec_inf := decay_inf(median, 1 / av_sero, 1, 1), age_grp
   ggplot(aes(x = date, y = dec_inf / population, ymin = dec_bot / population, ymax = dec_top / population)) + 
   geom_line() + 
   geom_ribbon(alpha = 0.4) + 
-  facet_wrap(~ age_grp)
+  facet_wrap(~ age_grp) +
   geom_point(data = subset(sero, study == "React 2" & age_lower >= 25), aes(x = start_date + (end_date - start_date) / 2, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 25), aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
   geom_errorbarh(data = subset(sero, study == "React 2" & age_lower >= 25), aes(xmin = start_date, xmax = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
