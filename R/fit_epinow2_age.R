@@ -30,14 +30,21 @@ for(i in 2:length(agebreaks)){
   midpoints[i - 1] <- (agebreaks[i - 1] + agebreaks[i]) / 2
 }
 
-source(here::here("R/fit_IFR_agegroup.R"))
+# source(here::here("R/fit_IFR_agegroup.R"))
 
-preds <- predict(fit, newdata = data.frame(agemid = midpoints), se.fit = TRUE)
+# preds <- predict(fit, newdata = data.frame(agemid = midpoints), se.fit = TRUE)
 
-IFR <- data.table(age_grp = agelabs,
-           ifr = boot::inv.logit(preds$fit),
-           ifr_lower = boot::inv.logit(preds$fit - 1.96*preds$se.fit),
-           ifr_upper = boot::inv.logit(preds$fit + 1.96*preds$se.fit))
+# IFR <- data.table(age_grp = agelabs,
+#            ifr = boot::inv.logit(preds$fit),
+#            ifr_lower = boot::inv.logit(preds$fit - 1.96*preds$se.fit),
+#            ifr_upper = boot::inv.logit(preds$fit + 1.96*preds$se.fit))
+
+# From here: https://www.medrxiv.org/content/10.1101/2020.07.23.20160895v4.full.pdf
+# IFR <- data.table(age_grp = agelabs,
+#                   ifr = exp(-7.56 + (0.121 * midpoints)) / 100,
+#                   ifr_lower = exp((-7.56 + (1.96 * 0.17)) + ((0.121 + (1.96 * 0.003)) * midpoints)) / 100,
+#                   ifr_upper = exp((-7.56 - (1.96 * 0.17)) + ((0.121 - (1.96 * 0.003)) * midpoints)) / 100)
+
 
 
 ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right = FALSE)
@@ -48,6 +55,16 @@ ons_linelist[, age_grp := cut(age, breaks = agebreaks, labels = agelabs, right =
 age_dist <- ons_linelist[, .N, age_grp][order(age_grp)]
 probs <- age_dist[!is.na(age_grp), N]/sum(age_dist[!is.na(age_grp), N])
 ons_linelist[is.na(age_grp), age_grp := sample(x = agelabs, size = age_dist[is.na(age_grp), N], prob = probs, replace = TRUE)]
+
+
+# IFR data.table
+ifr_tab <- ons_linelist[!is.na(age)]
+ifr_tab <- ifr_tab[, .(age = median(age)), age_grp]
+
+IFR <- ifr_tab[, .(age_grp,
+                       ifr = exp(-7.56 + (0.121 * age)) / 100,
+                       ifr_upper = exp((-7.56 + (1.96 * 0.17)) + ((0.121 + (1.96 * 0.003)) * age)) / 100,
+                       ifr_lower = exp((-7.56 - (1.96 * 0.17)) + ((0.121 - (1.96 * 0.003)) * age)) / 100)]
 
 ## READ CO-CIN LINELIST
 # Read in data
@@ -197,12 +214,6 @@ joint_out <- rbindlist(list(fr[type == "estimate" & variable == "infections"
                                ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = c("date", "location")], 
                fr2[type == "estimate" & variable == "infections", .(date, median, top, bottom, location)]), use.names = TRUE)
 
-##########################################################################################
-## Move back hospital infections to account for time from infection to hospitalisation? ##
-##########################################################################################
-
-joint_out[location == "hospital", date := date - 5]
-
 ## Plot
 
 joint_out %>%
@@ -273,7 +284,7 @@ p2 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom =
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Cumulative daily infections")
 
-# p1 + p2
+p1 + p2
 
 
 ## READ IN AND FORMAT REACT STUDY DATA
@@ -370,7 +381,7 @@ plot_dt[date >= start_date & date <= end_date
 ## PLOT RESULTS FOR REACT 2
 
 # Average time to sero-reversion
-av_sero <- 30*6
+av_sero <- 180
 sero_sensitivity <- 0.9
 sero_specificity <- 1
 
