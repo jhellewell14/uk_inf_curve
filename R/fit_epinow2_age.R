@@ -51,7 +51,8 @@ IFR <- ifr_tab[, .(age_grp,
 
 ## READ CO-CIN LINELIST
 # Read in data
-data <- data.table::fread("~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv", na.strings = "")
+path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv"
+data <- data.table::fread(path_to_cocin, na.strings = "")
 
 # Select columns + fix read in issue where entries are "" instead of NA
 cocin_linelist <- data[,.(cestdat, dsstdtc, dsterm, subjid, age = age_estimateyears)]
