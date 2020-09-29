@@ -44,14 +44,15 @@ ons_linelist[is.na(age_grp), age_grp := sample(x = agelabs, size = age_dist[is.n
 ifr_tab <- ons_linelist[!is.na(age)]
 ifr_tab <- ifr_tab[, .(age = median(age)), age_grp]
 
-IFR <- ifr_tab[, .(age_grp,
-                       ifr = exp(-7.56 + (0.121 * age)) / 100,
-                       ifr_upper = exp((-7.56 + (1.96 * 0.17)) + ((0.121 + (1.96 * 0.003)) * age)) / 100,
-                       ifr_lower = exp((-7.56 - (1.96 * 0.17)) + ((0.121 - (1.96 * 0.003)) * age)) / 100)][order(age_grp)]
+ifr_meta <- data.table::fread("data/meta-regression-results.csv")
+ifr_meta <- ifr_meta[, .(age, ifr = ifr / 100, ifr_upper = upper / 100, ifr_lower  = lower / 100)]
+
+IFR <- merge(ifr_meta, ifr_tab, by = "age")[order(age_grp)]
 
 ## READ CO-CIN LINELIST
 # Read in data
-path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv"
+# path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv"
+path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-08-04_0947.csv"
 data <- data.table::fread(path_to_cocin, na.strings = "")
 
 # Select columns + fix read in issue where entries are "" instead of NA
