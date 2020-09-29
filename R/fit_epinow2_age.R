@@ -401,18 +401,19 @@ final_out_react1 %>%
   ggplot(aes(x = date, y = dec_prev / age, ymin = dec_bot / age, ymax = dec_top / age)) +
   geom_line() +
   geom_ribbon(alpha = 0.4) +
-  scale_y_continuous(labels = comma) +
+  # scale_y_continuous(labels = comma) +
   # geom_vline(xintercept = as.Date("2020-03-23")) +
   cowplot::theme_minimal_grid() +
   ggplot2::labs(x = "Date", y = "Prevalence by swab + PCR (%)", title = paste0("Average time until PCR-negative: ", av_test_neg, " days after infection")) +
   facet_wrap(~ age_grp) +
   geom_errorbarh(data = subset(sero, study == "React 1" & age_grp != "18-24"),
-                 inherit.aes = FALSE, aes(xmin = as.Date(start_date), xmax = as.Date(end_date), width = 0,
+                 inherit.aes = FALSE, aes(xmin = as.Date(start_date), xmax = as.Date(end_date),
                                           y = seroprev / 100, group = age_grp), col = "red4") +
   geom_errorbar(data = subset(sero, study == "React 1" & age_grp != "18-24"),
                 inherit.aes = FALSE, aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100),
                 col = "red4", width = 0) +
-  scale_y_continuous(breaks = seq(0, 0.04, 0.01), labels = seq(0, 4, 1))
+  scale_y_continuous(breaks = seq(0, 0.04, 0.01), labels = seq(0, 4, 1)) +
+  coord_cartesian(xlim = c(as.Date("2020-05-01"), as.Date("2020-09-07")))
 
 
 ## ALTERNATIVE REACT 1 PLOT
