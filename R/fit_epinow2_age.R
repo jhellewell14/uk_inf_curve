@@ -386,7 +386,7 @@ decay_inf <- function(x, decay_rate, test_sens, test_spec) {
 
 # Plot REACT 1 results
 # PCR test parameters
-av_test_neg <- 10
+av_test_neg <- 5 # this is value PHE use via Nick
 pcr_sensitivity <- 1
 pcr_specificity <- 1
 
@@ -436,7 +436,7 @@ plot_dt[date >= start_date & date <= end_date
 ## PLOT RESULTS FOR REACT 2
 
 # Average time to sero-reversion
-av_sero <- 365
+av_sero <- 180 / log(2) # calculating mean time to sero-reversion from 180 day half life
 sero_sensitivity <- 1
 sero_specificity <- 1
 
