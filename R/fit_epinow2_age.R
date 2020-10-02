@@ -13,13 +13,17 @@ file_path <- file.path(path_to_factory, "data", "rds", "deaths_eng_latest.rds")
 key <- cyphr::data_key(file.path(path_to_factory, "data"))
 x <- cyphr::decrypt(readRDS(file_path), key)
 
-ons_linelist <- data.table::as.data.table(x)
+ons_linelist <- data.table::as.data.table(x)[ons == "reported_by_ons"]
 
 # Binary variable for care home or hospital death
-ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" |
-                                            place_of_death == "care_home",
+# ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home" |
+#                                             place_of_death == "care_home",
+#                                           "Care home",
+#                                           "Other")]
+ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home",
                                           "Care home",
                                           "Other")]
+
 
 # Vectors for age groups
 agebreaks <- c(0, seq(20, 85, 5), 90, 100)
@@ -51,8 +55,8 @@ IFR <- merge(ifr_meta, ifr_tab, by = "age")[order(age_grp)]
 
 ## READ CO-CIN LINELIST
 # Read in data
-# path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv"
-path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-08-04_0947.csv"
+path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-09-14_1105.csv"
+# path_to_cocin <- "~/Downloads/CCPUKSARI_DATA_2020-08-04_0947.csv"
 data <- data.table::fread(path_to_cocin, na.strings = "")
 
 # Select columns + fix read in issue where entries are "" instead of NA
@@ -386,7 +390,7 @@ decay_inf <- function(x, decay_rate, test_sens, test_spec) {
 
 # Plot REACT 1 results
 # PCR test parameters
-av_test_neg <- 5 # this is value PHE use via Nick
+av_test_neg <- 7.5 # this is value PHE use via Nick
 pcr_sensitivity <- 1
 pcr_specificity <- 1
 
@@ -417,7 +421,7 @@ final_out_react1 %>%
 
 
 ## ALTERNATIVE REACT 1 PLOT
-plot_dt <- merge(final_out_react1[age_grp != "0-34"], sero[study == "React 1" & age_lower >= 35 & round <= 3], by = "age_grp", allow.cartesian = TRUE)
+plot_dt <- merge(final_out_react1, sero[study == "React 1" & age_lower >= 25 & round <= 3], by = "age_grp", allow.cartesian = TRUE)
 plot_dt[date >= start_date & date <= end_date
 ][, .(median = median(dec_prev / age), 
       top = median(dec_top / age),
@@ -455,9 +459,23 @@ final_out_react2 %>%
   geom_errorbar(data = subset(sero, study == "React 2" & age_lower >= 25), aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100), col = "red4", inherit.aes = FALSE) +
   geom_errorbarh(data = subset(sero, study == "React 2" & age_lower >= 25), aes(xmin = start_date, xmax = end_date, y = seroprev / 100), col = "red4", inherit.aes = FALSE) +
   scale_y_continuous(breaks = seq(0, 0.13, 0.01), labels = seq(0, 13, 1)) +
-  labs(y = "Seroprevalence (%)", x = "Date", title  = paste0("Average time to sero-reversion: ", av_sero, " days")) +
+  labs(y = "Seroprevalence (%)", x = "Date", title  = paste0("Average time to sero-reversion: ", round(av_sero), " days")) +
   cowplot::theme_minimal_grid()
 
 
+## Under-ascertainment
+cases <- fread("~/Downloads/data_2020-Oct-01.csv")[areaName == "England", .(date, conf_cases = newCasesBySpecimenDate)]
 
+all_inf <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
+][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"]
+
+testing <- fread("~/Downloads/data_2020-Oct-01(2).csv")
+
+merge(all_inf, cases, by = "date")[date <= as.Date("2020-07-01") & date >= as.Date("2020-02-01")] %>%
+  ggplot(aes(x = date, y = conf_cases / median, ymin = conf_cases/ bottom, ymax = conf_cases / top)) + 
+  geom_line() +
+  geom_ribbon(alpha = 0.4) +
+  labs(y = "Case ascertainment (%)", x = "Date") +
+  # scale_y_continuous(breaks = seq(0,0.7, 0.1), labels = paste0(seq(0, 70, 10))) +
+  cowplot::theme_minimal_grid()
 
