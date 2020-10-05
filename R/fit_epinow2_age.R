@@ -251,7 +251,7 @@ final_out <- final_out[final_out[, .(date = seq.Date(from = min(final_out$date),
 smooth_agegrp <- function(x, win = 21){
   y <- c()
   for(i in 1:length(x)) {
-    y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):ifelse(i + win > length(x), length(x), i + win)])
+    y[i] <- mean(x[(ifelse(i - win <= 0, 1, i - win)):i])
   }
   return(y)
 }
