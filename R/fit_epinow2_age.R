@@ -26,8 +26,8 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home",
 
 
 # Vectors for age groups
-agebreaks <- c(0, seq(20, 85, 5), 90, 100)
-agelabs <- c("0-19", paste0(seq(20, 85, 5),"-", seq(24, 89, 5)), "90-100")
+agebreaks <- c(0, seq(20, 85, 5), 90, 110)
+agelabs <- c("0-19", paste0(seq(20, 85, 5),"-", seq(24, 89, 5)), "90+")
 # Young groups don't have many deaths so they are grouped together for onset to death delays
 young_groups <- agelabs[1:4]
 old_ind <- 5
@@ -297,10 +297,73 @@ p2 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom =
 
 p1 + p2
 
+## COMPARE WITH REACT 1
+population <- fread(here::here("data/england_population.csv"), header = TRUE)
+
+population <- population[,.(age_grp, population = pop2020, age_upper, age_lower)]
+
+population$age_grp <- as.factor(population$age_grp)
+
+react1 <- data.table::fread("~/Downloads/prev_tab_raw.csv")
+
+react1[, start_date := as.Date(start_date, format = "%d-%m-%Y")
+][, end_date := as.Date(end_date, format = "%d-%m-%Y")]
+
+react1$age_grp <- as.factor(react1$age_grp)
+react1$age_grp <- rockchalk::combineLevels(react1$age_grp, levs = c("5-9","10-14","15-19"), newLabel = "0-19")
+
+react1[age_grp == "0-19", c("total", "positive") := list(sum(total), sum(positive)), by = list(age_grp, round)]
+
+react1 <- react1[, .SD[1] , by = list(round, age_grp)]
+
+react1[age_grp == "0-19", prevalence := positive / total]
+react1[age_grp == "0-19", lower := prevalence - 1.96 * sqrt((prevalence * (1 - prevalence)) / total)]
+react1[age_grp == "0-19", upper := prevalence + 1.96 * sqrt((prevalence * (1 - prevalence)) / total)]
+react1
+
+population$age_grp <- rockchalk::combineLevels(population$age_grp, levs = c("0-4", "5-9","10-14","15-19"), newLabel = "0-19")
+population <- population[, .(population = sum(population)), age_grp]
+
+
+final_out <- merge(final_out[variable == "infections", .(age_grp, date, median, top, bottom, ifr, ifr_upper, ifr_lower)], population, by = "age_grp")
+
+### VERY SIMPLE COMPARTMENTAL DECAY APPROACH
+decay_inf <- function(x, decay_rate, test_sens, test_spec) {
+  out <- c()
+  out[1] <- x[1]
+  for(t in 2:length(x)) {
+    out[t] <- out[t - 1] + x[t] - (decay_rate * out[t - 1])
+  }
+  return(out * test_sens)
+}
+
+
+# PCR test parameters
+av_test_neg <- 7.5 # this is value PHE use via Nick
+pcr_sensitivity <- 1
+pcr_specificity <- 1
+
+final_out[, dec_prev := decay_inf(median / ifr, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
+final_out[, dec_bot := decay_inf(bottom / ifr_upper, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
+final_out[, dec_top := decay_inf(top / ifr_lower, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
+
+final_out[date >= as.Date("2020-05-15") & date <= as.Date("2020-08-05")] %>%
+  ggplot(aes(x = date, y = dec_prev / population, ymin = dec_bot / population, ymax = dec_top / population)) +
+  geom_line() +
+  geom_ribbon(alpha = 0.4) +
+  geom_point(inherit.aes = FALSE, data = react1, aes(x = as.Date(start_date) + (as.integer(as.Date(end_date) - as.Date(start_date)) / 2), y = prevalence, group = age_grp), col = "red") +
+  geom_errorbar(inherit.aes = FALSE, data = react1, width = 1,
+                aes(x = as.Date(start_date) + (as.integer(as.Date(end_date) - as.Date(start_date)) / 2), 
+                    ymin = lower, ymax = upper, group = age_grp), col = "red") +
+  facet_wrap(~age_grp, scale = "free_y") +
+  cowplot::theme_minimal_grid() +
+  ggplot2::labs(x = "Date", y = "Prevalence by swab + PCR (%)", title = paste0("Average time until PCR-negative: ", av_test_neg, " days after infection"))
 
 ## READ IN AND FORMAT REACT STUDY DATA
 
 sero <- fread(here::here("data/react_results.csv"))[study %in% c("React 1", "React 2")]
+
+react1 <- fread("~/Downloads/prev_tab_raw.csv")
 
 sero <- sero[, age_grp := paste0(age_lower, "-", age_upper)
              ][age_upper >= 18]
@@ -308,33 +371,10 @@ sero <- sero[, age_grp := paste0(age_lower, "-", age_upper)
 sero[, start_date := as.Date(start_date, format = "%d-%m-%Y")
      ][, end_date := as.Date(end_date, format = "%d-%m-%Y")]
 
-## READ IN POPULATION DATA
-population <- fread(here::here("data/england_population.csv"), header = TRUE)
-
-population <- population[,.(age_grp, population = pop2020, age_upper, age_lower)]
-
-population$age_grp <- as.factor(population$age_grp)
-
-## React 1 and React 2 have slightly different age groups so we need to create 2 
-## copies of the population table with merged populations
-
-# React 1
-# We can't do 18-24 due to age groups in population data so start at 25-34
-pop_react1 <- population[age_lower >= 25]
-
-# Re-factor age groups
-pop_react1$age_grp <- rockchalk::combineLevels(pop_react1$age_grp, levs = c("25-29", "30-34"), newLabel = "25-34")
-pop_react1$age_grp <- rockchalk::combineLevels(pop_react1$age_grp, levs = c("35-39", "40-44"), newLabel = "35-44")
-pop_react1$age_grp <- rockchalk::combineLevels(pop_react1$age_grp, levs = c("45-49", "50-54"), newLabel = "45-54")
-pop_react1$age_grp <- rockchalk::combineLevels(pop_react1$age_grp, levs = c("55-59", "60-64"), newLabel = "55-64")
-pop_react1$age_grp <- rockchalk::combineLevels(pop_react1$age_grp, levs = c("65-69", "70-74", "75-79", "80-84", "85-89", "90+"), newLabel = "65-100")
-
-# Sum up by new age groups
-pop_react1 <- pop_react1[, .(age = sum(population)), by = age_grp]
 
 # React 2
 # Again, we can't do 18-24 due to age groups in population data so start at 25-34
-pop_react2 <- population[age_lower >= 25]
+pop_react2 <- population[age_grp != "0-19" & age_grp != "20-24"]
 
 # Re-factor age groups
 pop_react2$age_grp <- rockchalk::combineLevels(pop_react2$age_grp, levs = c("25-29", "30-34"), newLabel = "25-34")
@@ -349,19 +389,7 @@ pop_react2 <- pop_react2[, .(population = sum(population)), by = age_grp]
 
 ## RE-FORMULATE EPINOW2 OUTPUT TO REACT 1 & 2 AGE GROUPS
 
-# React 1
-final_out_react1 <- final_out[, .(age_grp, date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
-                              ][!(age_grp %in% c("0-19", "20-24"))]
-# Re-factor age groups
-final_out_react1$age_grp <- as.factor(final_out_react1$age_grp)
-final_out_react1$age_grp <- rockchalk::combineLevels(final_out_react1$age_grp, levs = c("25-29", "30-34"), newLabel = "25-34")
-final_out_react1$age_grp <- rockchalk::combineLevels(final_out_react1$age_grp, levs = c("35-39", "40-44"), newLabel = "35-44")
-final_out_react1$age_grp <- rockchalk::combineLevels(final_out_react1$age_grp, levs = c("45-49", "50-54"), newLabel = "45-54")
-final_out_react1$age_grp <- rockchalk::combineLevels(final_out_react1$age_grp, levs = c("55-59", "60-64"), newLabel = "55-64")
-final_out_react1$age_grp <- rockchalk::combineLevels(final_out_react1$age_grp, levs = c("65-69", "70-74", "75-79", "80-84", "85-89", "90-100"), newLabel = "65-100")
 
-# Sum back up
-final_out_react1 <- final_out_react1[, .(age_grp, date, bottom, top, median)][, .(bottom = sum(bottom), median = sum(median), top = sum(top)), by = c("age_grp", "date")]
 
 # React 2
 final_out_react2 <- final_out[, .(age_grp, date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
@@ -378,64 +406,6 @@ final_out_react2$age_grp <- rockchalk::combineLevels(final_out_react2$age_grp, l
 # Sum back up
 final_out_react2 <- final_out_react2[, .(age_grp, date, bottom, top, median)][, .(bottom = sum(bottom), median = sum(median), top = sum(top)), by = c("age_grp", "date")]
 
-### VERY SIMPLE COMPARTMENTAL DECAY APPROACH
-decay_inf <- function(x, decay_rate, test_sens, test_spec) {
-  out <- c()
-  out[1] <- x[1]
-  for(t in 2:length(x)) {
-    out[t] <- out[t - 1] + x[t] - (decay_rate * out[t - 1])
-  }
-  return(out * test_sens)
-}
-
-# Plot REACT 1 results
-# PCR test parameters
-av_test_neg <- 7.5 # this is value PHE use via Nick
-pcr_sensitivity <- 1
-pcr_specificity <- 1
-
-final_out_react1 <- merge(final_out_react1, pop_react1, by = "age_grp")[order(age_grp, date)]
-
-# Create decayed prevalence variables
-final_out_react1[, dec_prev := decay_inf(median, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
-final_out_react1[, dec_bot := decay_inf(bottom, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
-final_out_react1[, dec_top := decay_inf(top, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
-
-final_out_react1 %>%
-  ggplot(aes(x = date, y = dec_prev / age, ymin = dec_bot / age, ymax = dec_top / age)) +
-  geom_line() +
-  geom_ribbon(alpha = 0.4) +
-  # scale_y_continuous(labels = comma) +
-  # geom_vline(xintercept = as.Date("2020-03-23")) +
-  cowplot::theme_minimal_grid() +
-  ggplot2::labs(x = "Date", y = "Prevalence by swab + PCR (%)", title = paste0("Average time until PCR-negative: ", av_test_neg, " days after infection")) +
-  facet_wrap(~ age_grp) +
-  geom_errorbarh(data = subset(sero, study == "React 1" & age_grp != "18-24"),
-                 inherit.aes = FALSE, aes(xmin = as.Date(start_date), xmax = as.Date(end_date),
-                                          y = seroprev / 100, group = age_grp), col = "red4") +
-  geom_errorbar(data = subset(sero, study == "React 1" & age_grp != "18-24"),
-                inherit.aes = FALSE, aes(x = start_date + (end_date - start_date) / 2, ymin = lower / 100, ymax = upper / 100),
-                col = "red4", width = 0) +
-  scale_y_continuous(breaks = seq(0, 0.04, 0.01), labels = seq(0, 4, 1)) +
-  coord_cartesian(xlim = c(as.Date("2020-05-01"), as.Date("2020-09-07")))
-
-
-## ALTERNATIVE REACT 1 PLOT
-plot_dt <- merge(final_out_react1, sero[study == "React 1" & age_lower >= 25 & round <= 3], by = "age_grp", allow.cartesian = TRUE)
-plot_dt[date >= start_date & date <= end_date
-][, .(median = median(dec_prev / age), 
-      top = median(dec_top / age),
-      bottom = median(dec_bot / age),
-      prev = unique(seroprev) / 100, 
-      lower = unique(lower) / 100, 
-      upper = unique(upper) / 100), list(age_grp, round)] %>%
-  ggplot() +
-  geom_errorbar(aes(x = age_grp, ymin = bottom, ymax = top)) + 
-  geom_errorbar(aes(x = age_grp, ymin = lower, ymax = upper), col = "red4") +
-  facet_wrap(~ round) +
-  cowplot::theme_minimal_grid() +
-  scale_y_continuous(breaks = seq(0, 0.005, 0.001), labels = seq(0, 0.5, 0.1)) +
-  labs(y = "PCR prevalence (%)", x = "Age group")
 
 ## PLOT RESULTS FOR REACT 2
 
