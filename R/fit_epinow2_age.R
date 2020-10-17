@@ -29,7 +29,7 @@ ons_linelist[, care_home_death := fifelse(residence_type == "care_nursing_home",
 agebreaks <- c(0, seq(20, 85, 5), 90, 110)
 agelabs <- c("0-19", paste0(seq(20, 85, 5),"-", seq(24, 89, 5)), "90+")
 # Young groups don't have many deaths so they are grouped together for onset to death delays
-young_groups <- agelabs[1:4]
+young_groups <- agelabs[1:5]
 old_ind <- 5
 
 # Assign everyone with an age into their age group
@@ -125,16 +125,16 @@ deaths_community <- deaths_community[deaths_community[, .(date = seq.Date(from =
 
 
 ## Define generation time and incubation period
-generation_time <- list(mean = EpiNow2::covid_generation_times[1, ]$mean,
-                        mean_sd = EpiNow2::covid_generation_times[1, ]$mean_sd,
-                        sd = EpiNow2::covid_generation_times[1, ]$sd,
-                        sd_sd = EpiNow2::covid_generation_times[1, ]$sd_sd,
+generation_time <- list(mean = EpiNow2::generation_times[1, ]$mean,
+                        mean_sd = EpiNow2::generation_times[1, ]$mean_sd,
+                        sd = EpiNow2::generation_times[1, ]$sd,
+                        sd_sd = EpiNow2::generation_times[1, ]$sd_sd,
                         max = 30)
 
-incubation_period <- list(mean = EpiNow2::covid_incubation_period[1, ]$mean,
-                          mean_sd = EpiNow2::covid_incubation_period[1, ]$mean_sd,
-                          sd = EpiNow2::covid_incubation_period[1, ]$sd,
-                          sd_sd = EpiNow2::covid_incubation_period[1, ]$sd_sd,
+incubation_period <- list(mean = EpiNow2::incubation_periods[1, ]$mean,
+                          mean_sd = EpiNow2::incubation_periods[1, ]$mean_sd,
+                          sd = EpiNow2::incubation_periods[1, ]$sd,
+                          sd_sd = EpiNow2::incubation_periods[1, ]$sd_sd,
                           max = 30)
 
 ## Fit EpiNow2 to each age group
@@ -146,13 +146,16 @@ for(i in 1:length(agelabs)){
   reporting_delay <- as.list(rbindlist(delays)[age_grp == agelabs[i]])
   reporting_delay$max <- 60
   
-  estimates <- EpiNow2::estimate_infections(reported_cases = deaths_community[age_grp == agelabs[i]], 
-                                            generation_time = generation_time,
-                                            estimate_rt = FALSE, fixed = FALSE,
-                                            delays = list(incubation_period, reporting_delay),
-                                            horizon = 0, samples = 4000, warmup = 500, 
-                                            cores = 4, chains = 4, verbose = TRUE, 
-                                            adapt_delta = 0.95)
+  estimates <- EpiNow2::estimate_infections(reported_cases = deaths_community[age_grp == agelabs[i]],  
+                                            generation_time = generation_time, 
+                                            rt_prior = list(),
+                                            family = "negbin",
+                                            delays = list(incubation_period, reporting_delay), 
+                                            samples = 1000, 
+                                            horizon = 0, 
+                                            week_effect = TRUE, 
+                                            use_breakpoints = FALSE)
+                                            
   
   res[[i]] <- estimates$summarised[, age_grp := agelabs[i]][, location := "community"]
   samps[[i]] <- estimates$samples[, age_grp := agelabs[i]][, location := "community"]
@@ -244,7 +247,7 @@ final_out <- fr[type == "estimate" & variable == "infections"]
 final_out <- final_out[final_out[, .(date = seq.Date(from = min(final_out$date), to = max(final_out$date), by = "day")),
                                  by = .(age_grp)],
                        on = .(age_grp, date),
-                       roll = 0][is.na(median), c("median", "top", "bottom", "location") := list(0, 0, 0, "community")]
+                       roll = 0][is.na(median), c("median", "upper_90", "lower_90", "location") := list(0, 0, 0, "community")]
 
 
 ## Function to smooth youngest age group cases 
@@ -259,22 +262,22 @@ smooth_agegrp <- function(x, win = 21){
 
 ## Smooth young age groups
 final_out[age_grp %in% young_groups, median := smooth_agegrp(median), by = age_grp]
-final_out[age_grp %in% young_groups, top := smooth_agegrp(top), by = age_grp]
-final_out[age_grp %in% young_groups, bottom := smooth_agegrp(bottom), by = age_grp]
+final_out[age_grp %in% young_groups, upper_90 := smooth_agegrp(upper_90), by = age_grp]
+final_out[age_grp %in% young_groups, lower_90 := smooth_agegrp(lower_90), by = age_grp]
 
 
 final_out[age_grp %in% young_groups] %>%
   ggplot(aes(x = date, y = median)) +
   geom_line() +
   facet_wrap(~ age_grp, scales = "free_y") +
-  geom_ribbon(aes(ymin = bottom, ymax = top), alpha = 0.5)
+  geom_ribbon(aes(ymin = lower_90, ymax = upper_90), alpha = 0.5)
 
 setkey(final_out, date, age_grp, location)
 
 ## Final plots
 final_out <- merge(final_out, IFR, by = c("age_grp", "location"))
 
-p1 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
+p1 <- final_out[, .(date, median = median / ifr, top = upper_90 / ifr_lower, bottom = lower_90 / ifr_upper)
           ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
   geom_line() +
@@ -284,7 +287,7 @@ p1 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom =
   cowplot::theme_cowplot() +
   ggplot2::labs(x = "Date", y = "Daily infections")
 
-p2 <- final_out[, .(date, median = median / ifr, top = top / ifr_lower, bottom = bottom / ifr_upper)
+p2 <- final_out[, .(date, median = median / ifr, top = upper_90 / ifr_lower, bottom = lower_90 / ifr_upper)
 ][, .(median = sum(median), top = sum(top), bottom = sum(bottom)), by = "date"
   ][order(date)][, .(median = cumsum(median), top = cumsum(top), bottom = cumsum(bottom), date)] %>%
   ggplot(aes(x = date, y = median, ymin = bottom, ymax = top)) +
@@ -319,13 +322,12 @@ react1 <- react1[, .SD[1] , by = list(round, age_grp)]
 react1[age_grp == "0-19", prevalence := positive / total]
 react1[age_grp == "0-19", lower := prevalence - 1.96 * sqrt((prevalence * (1 - prevalence)) / total)]
 react1[age_grp == "0-19", upper := prevalence + 1.96 * sqrt((prevalence * (1 - prevalence)) / total)]
-react1
 
 population$age_grp <- rockchalk::combineLevels(population$age_grp, levs = c("0-4", "5-9","10-14","15-19"), newLabel = "0-19")
 population <- population[, .(population = sum(population)), age_grp]
 
 
-final_out <- merge(final_out[variable == "infections", .(age_grp, date, median, top, bottom, ifr, ifr_upper, ifr_lower)], population, by = "age_grp")
+final_out <- merge(final_out[, .(age_grp, date, median, top, bottom, ifr, ifr_upper, ifr_lower)], population, by = "age_grp")
 
 ### VERY SIMPLE COMPARTMENTAL DECAY APPROACH
 decay_inf <- function(x, decay_rate, test_sens, test_spec) {
@@ -337,9 +339,22 @@ decay_inf <- function(x, decay_rate, test_sens, test_spec) {
   return(out * test_sens)
 }
 
+decay_inf2 <- function(x) {
+  out <- c(x[1])
+  conv <- c(x[1], rep(0, 9))
+  for(t in 2:length(x)) {
+    for(k in 10:2){
+      conv[k] <- conv[k -1]
+    }
+    conv[1] <- x[t]
+    out[t] <- sum(conv)
+  }
+  return(out)
+}
+
 
 # PCR test parameters
-av_test_neg <- 7.5 # this is value PHE use via Nick
+av_test_neg <- 10 # this is value PHE use via Nick
 pcr_sensitivity <- 1
 pcr_specificity <- 1
 
@@ -347,7 +362,11 @@ final_out[, dec_prev := decay_inf(median / ifr, decay_rate = 1 / av_test_neg, te
 final_out[, dec_bot := decay_inf(bottom / ifr_upper, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
 final_out[, dec_top := decay_inf(top / ifr_lower, decay_rate = 1 / av_test_neg, test_sens = pcr_sensitivity, test_spec = pcr_specificity), by = age_grp]
 
-final_out[date >= as.Date("2020-05-15") & date <= as.Date("2020-08-05")] %>%
+final_out[, dec_prev := decay_inf2(median / ifr), by = age_grp]
+final_out[, dec_bot := decay_inf2(bottom / ifr_upper), by = age_grp]
+final_out[, dec_top := decay_inf2(top / ifr_lower), by = age_grp]
+
+final_out[date >= as.Date("2020-05-01") & date <= as.Date("2020-08-11")] %>%
   ggplot(aes(x = date, y = dec_prev / population, ymin = dec_bot / population, ymax = dec_top / population)) +
   geom_line() +
   geom_ribbon(alpha = 0.4) +
@@ -355,9 +374,11 @@ final_out[date >= as.Date("2020-05-15") & date <= as.Date("2020-08-05")] %>%
   geom_errorbar(inherit.aes = FALSE, data = react1, width = 1,
                 aes(x = as.Date(start_date) + (as.integer(as.Date(end_date) - as.Date(start_date)) / 2), 
                     ymin = lower, ymax = upper, group = age_grp), col = "red") +
+  geom_errorbarh(inherit.aes = FALSE, data = react1, width = 1,
+                 aes(xmin = start_date, xmax = end_date, y = prevalence), col = "red") +
   facet_wrap(~age_grp, scale = "free_y") +
   cowplot::theme_minimal_grid() +
-  ggplot2::labs(x = "Date", y = "Prevalence by swab + PCR (%)", title = paste0("Average time until PCR-negative: ", av_test_neg, " days after infection"))
+  ggplot2::labs(x = "Date", y = "Prevalence by swab + PCR (%)", title = paste0("PCR-negative: ", av_test_neg, " days after infection"))
 
 ## READ IN AND FORMAT REACT STUDY DATA
 
