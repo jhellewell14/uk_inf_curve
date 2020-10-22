@@ -80,14 +80,11 @@ data {
   real lengthscale_alpha;            // alpha for gp lengthscale prior
   real lengthscale_beta;             // beta for gp lengthscale prior
   real alpha_sd;                     // standard deviation of the alpha gp kernal parameter
+
 }
 
 transformed data {
   matrix[t, M] PHI;
-  // real gt_mean = gt_mean_mean;
-  // real gt_sd = gt_sd_mean;
-  // real delay_mean[delays] = delay_mean_mean;
-  // real delay_sd[delays] = delay_sd_mean;
 
   for(m in 1:M) {
     PHI[, m] = phi_SE(L, m, time);
