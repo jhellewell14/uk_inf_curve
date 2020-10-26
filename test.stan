@@ -165,3 +165,54 @@ model {
 
   // target += normal_lpdf(sum(reports) | sum(cases), sigma);
 }
+
+generated quantities {
+  vector[t] infectiousness;
+  vector[t] R;
+  vector[max_gt] rev_generation_time;
+  vector[t] infections_upscaled;
+  vector[max_delay[1]] incubation_pdf;
+  vector[max_delay[1]] incubation_cdf;
+  real mu;
+  real vari;
+  real n;
+  real p;
+  vector[t] infectiousness_upscaled;
+  vector[t] R_upscaled;
+
+  for(k in 1:max_delay[1]) {
+    incubation_pdf[k] = discretised_lognormal_pmf(k, delay_mean[1], delay_sd[1], max_delay[1]);
+  }
+
+  incubation_cdf = cumulative_sum(incubation_pdf);
+
+  for (j in 1:(max_gt)) {
+       rev_generation_time[j] =
+           discretised_gamma_pmf(max_gt - j + 1, gt_mean, 
+                                 gt_sd, max_gt);
+     }
+
+  for (s in 1:t) {
+        infectiousness[s] = dot_product(infections[max(1, (s - max_gt)):(s - 1)],
+                                         tail(rev_generation_time, min(max_gt, s - 1)));
+  }
+
+  R = infections ./ infectiousness;
+
+  for(tt in 0:max_delay[1]) {
+    n = infections[t - tt];
+    p = (tt > 0) ? incubation_cdf[tt] : discretised_lognormal_pmf(0, delay_mean[1], delay_sd[1], max_delay[1]);
+    mu = n * (1 - p) / p;
+    vari =   n * (1 - p) / p^2;
+    infections_upscaled[t - tt] = n + neg_binomial_2_rng(mu, vari);
+  }
+
+  infections_upscaled[1 : (t - max_delay[1]- 1)] = infections[1:(t - max_delay[1] - 1)];
+
+    for (s in 1:t) {
+        infectiousness_upscaled[s] = dot_product(infections_upscaled[max(1, (s - max_gt)):(s - 1)],
+                                         tail(rev_generation_time, min(max_gt, s - 1)));
+  }
+
+  R_upscaled = infections_upscaled ./ infectiousness_upscaled;
+}
